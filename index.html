@@ -1,0 +1,1483 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0d5f73">
+<meta name="description" content="회의를 녹음하고 화자별로 전사한 뒤, 테마별 요약과 액션 아이템으로 정리하는 앱">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="회의록">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<script src="firebase-config.js"></script>
+<title>회의록 레코더</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap">
+<style>
+/* Layout: 단일 컬럼 작업대 — 상단 고정 탭, 카드는 역할이 있는 곳에만 */
+:root{
+  --bg:#f3f5f7; --surface:#ffffff; --sunk:#e9edf1; --ink:#15202b; --muted:#5a6676; --line:#d9dfe6;
+  --accent:#0d5f73; --accent-ink:#ffffff; --accent-soft:#dcedf1;
+  --rec:#cf3328; --ok:#2f7d4f; --warn:#a86a00; --err:#b3261e;
+  --sp1:#0d5f73; --sp2:#b4532a; --sp3:#5b4fb0; --sp4:#2f7d4f; --sp5:#a3326e; --sp6:#7a6a12; --sp7:#2a6db0; --sp8:#6b5b4b;
+  --font-body:"IBM Plex Sans KR",system-ui,-apple-system,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;
+  --font-mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --r:10px;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0e1318; --surface:#161d24; --sunk:#1d262f; --ink:#e4e9ef; --muted:#93a0af; --line:#2a3440;
+  --accent:#4cb2c7; --accent-ink:#071419; --accent-soft:#16323a;
+  --rec:#ff5b4f; --ok:#5cc489; --warn:#e0a53a; --err:#ff7b72;
+  --sp1:#4cb2c7; --sp2:#ef8a5c; --sp3:#a49af0; --sp4:#5cc489; --sp5:#e57ab4; --sp6:#d4c14e; --sp7:#6aa8ef; --sp8:#b9a48f;
+  color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0e1318; --surface:#161d24; --sunk:#1d262f; --ink:#e4e9ef; --muted:#93a0af; --line:#2a3440;
+  --accent:#4cb2c7; --accent-ink:#071419; --accent-soft:#16323a;
+  --rec:#ff5b4f; --ok:#5cc489; --warn:#e0a53a; --err:#ff7b72;
+  --sp1:#4cb2c7; --sp2:#ef8a5c; --sp3:#a49af0; --sp4:#5cc489; --sp5:#e57ab4; --sp6:#d4c14e; --sp7:#6aa8ef; --sp8:#b9a48f;
+  color-scheme:dark}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font:15px/1.6 var(--font-body);word-break:keep-all;overflow-wrap:break-word;-webkit-text-size-adjust:100%}
+[hidden]{display:none!important}
+button,input,select,textarea{font:inherit;color:inherit}
+a{color:var(--accent)}
+.wrap{max-width:860px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+
+header.top{position:sticky;top:0;z-index:10;background:var(--bg);border-bottom:1px solid var(--line);padding-top:env(safe-area-inset-top,0px)}
+.brand{display:flex;align-items:center;gap:10px;padding-block:12px 6px}
+.brand h1{font-size:17px;font-weight:700;margin:0;letter-spacing:-.01em}
+.brand .dot{width:10px;height:10px;border-radius:50%;background:var(--muted)}
+.brand .dot.live{background:var(--rec);animation:blink 1.2s infinite}
+.brand .cur{margin-left:auto;font-size:13px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:50%}
+@keyframes blink{50%{opacity:.25}}
+nav.tabs{display:flex;gap:2px;overflow-x:auto;scrollbar-width:none}
+nav.tabs button{background:none;border:0;padding:9px 12px 10px;font-size:14px;color:var(--muted);border-bottom:2px solid transparent;cursor:pointer;white-space:nowrap}
+nav.tabs button[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--accent);font-weight:600}
+
+main{padding-block:20px 80px}
+section.tab{display:flex;flex-direction:column;gap:18px}
+h2{font-size:20px;margin:0;letter-spacing:-.01em;text-wrap:balance}
+h3{font-size:15px;margin:0}
+.muted{color:var(--muted)}
+.small{font-size:13px}
+.label{font-size:12px;letter-spacing:.06em;color:var(--muted);text-transform:uppercase;font-weight:600}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:16px}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.grow{flex:1 1 200px;min-width:0}
+input[type=text],input[type=password],input[type=number],select,textarea{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:9px 11px;width:100%;min-width:0}
+input:focus-visible,select:focus-visible,textarea:focus-visible,button:focus-visible,[contenteditable]:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:9px 14px;cursor:pointer;font-weight:500;min-height:40px}
+.btn:hover{border-color:var(--muted)}
+.btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.btn.rec{background:var(--rec);color:#fff;border-color:var(--rec)}
+.btn.ghost{background:none;border-color:transparent;color:var(--muted)}
+.btn.danger{color:var(--err)}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn.sm{min-height:32px;padding:5px 10px;font-size:13px}
+
+/* recorder */
+.deck{display:flex;flex-direction:column;gap:10px}
+.deck-row{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.deck-mid{flex:1 1 150px;min-width:0}
+.clock{font:500 24px/1.25 var(--font-mono);font-variant-numeric:tabular-nums}
+canvas#level{width:100%;height:28px;display:block}
+.rbtn{flex:none;width:48px;height:48px;border-radius:50%;border:2px solid var(--line);background:var(--surface);display:grid;place-items:center;cursor:pointer}
+.rbtn span{width:18px;height:18px;border-radius:50%;background:var(--rec);transition:all .2s}
+.rbtn.on span{border-radius:4px;width:16px;height:16px}
+.rbtn:disabled{opacity:.4}
+.state{font-size:13px;color:var(--muted);min-height:1.5em}
+.folders{display:flex;gap:6px;flex-wrap:wrap}
+.chip{border:1px solid var(--line);border-radius:999px;padding:5px 12px;background:var(--surface);cursor:pointer;font-size:13.5px;white-space:nowrap}
+.chip .n{color:var(--muted);margin-left:5px;font-variant-numeric:tabular-nums}
+.chip[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.chip[aria-pressed="true"] .n{color:inherit;opacity:.75}
+.chip.add{border-style:dashed;color:var(--muted)}
+.mrow{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:12px 14px;display:flex;flex-direction:column;gap:8px}
+.mhead{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.mhead .msrc{margin-left:auto}
+.mres{display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap;font-size:13px}
+.mres .msg{flex:1 1 200px;min-width:0;overflow-wrap:anywhere;color:var(--muted)}
+.gate{position:fixed;inset:0;z-index:60;background:var(--bg);display:grid;place-items:center;overflow:auto;padding:calc(24px + env(safe-area-inset-top,0px)) max(16px,env(safe-area-inset-right,0px)) calc(24px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px))}
+body.locked header.top,body.locked main,html.auth-pending header.top,html.auth-pending main{display:none}
+.gate-card{width:100%;max-width:380px;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:26px 22px;display:flex;flex-direction:column}
+.gate-brand{display:flex;align-items:center;gap:10px;margin-bottom:14px}
+.gate-brand h1{font-size:19px;margin:0}
+.gate-dot{width:12px;height:12px;border-radius:50%;background:var(--rec)}
+.gbtn{width:100%;gap:10px;font-weight:600}
+.or{display:flex;align-items:center;gap:10px;color:var(--muted);font-size:12.5px;margin:16px 0 10px}
+.or::before,.or::after{content:"";flex:1;border-top:1px solid var(--line)}
+.gform{display:flex;flex-direction:column;gap:6px}
+.gate-msg{margin:12px 0 0;font-size:13.5px;color:var(--err);min-height:1.2em}
+.gate-msg.ok{color:var(--ok)}
+.chip .x{margin-left:6px;color:var(--muted);border:0;background:none;cursor:pointer;padding:0 2px;font-size:14px}
+.req{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:8px 0;border-bottom:1px dashed var(--line)}
+.mitem select{width:auto;max-width:150px;padding:5px 8px;font-size:13px}
+.meter{height:6px;background:var(--sunk);border-radius:3px;overflow:hidden;width:100%}
+.meter i{display:block;height:100%;background:var(--accent);width:0;transition:width .3s}
+.seglist{display:flex;flex-direction:column;gap:6px;margin:0;padding:0;list-style:none}
+.seglist li{display:flex;gap:10px;align-items:center;font-size:13px;padding:6px 0;border-bottom:1px dashed var(--line)}
+.seglist li:last-child{border-bottom:0}
+.seglist .t{font-family:var(--font-mono);font-variant-numeric:tabular-nums;color:var(--muted);white-space:nowrap}
+.pill{display:inline-flex;align-items:center;gap:5px;font-size:12px;padding:2px 9px;border-radius:999px;background:var(--sunk);color:var(--muted);white-space:nowrap}
+.pill.ok{color:var(--ok)} .pill.err{color:var(--err)} .pill.run{color:var(--accent)} .pill.warn{color:var(--warn)}
+.pill.run::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor;animation:blink 1s infinite}
+.seglist .msg{flex:1;min-width:0;color:var(--err);overflow-wrap:anywhere}
+
+/* transcript */
+.speakers{display:flex;flex-direction:column;gap:8px}
+.sprow{display:grid;grid-template-columns:auto 1fr auto;gap:8px;align-items:center}
+.swatch{width:12px;height:12px;border-radius:3px}
+.lines{display:flex;flex-direction:column}
+.ln{display:grid;grid-template-columns:76px 1fr;gap:4px 12px;padding:10px 0;border-bottom:1px solid var(--line)}
+.ln .ts{font:500 12.5px/1.9 var(--font-mono);font-variant-numeric:tabular-nums;color:var(--muted);background:none;border:0;padding:0;text-align:left;cursor:pointer;align-self:start}
+.ln .ts:hover{color:var(--accent);text-decoration:underline}
+.ln .body{min-width:0;display:flex;flex-direction:column;gap:2px}
+.ln select.who{appearance:none;-webkit-appearance:none;border:0;background:none;padding:0;width:auto;font-weight:600;font-size:13.5px;cursor:pointer}
+.ln .tx{overflow-wrap:anywhere;border-radius:4px;padding:1px 2px;margin:-1px -2px}
+.ln .tx:hover{background:var(--sunk)}
+.ln.playing{background:linear-gradient(90deg,var(--accent-soft),transparent 70%)}
+audio{width:100%;height:40px}
+.sticky-player{position:sticky;top:calc(env(safe-area-inset-top,0px) + 88px);z-index:5;background:var(--bg);padding-block:6px}
+
+/* summary */
+.trbody{display:flex;flex-direction:column;gap:14px}
+.sumbox{background:var(--surface);border:1px solid var(--line);border-radius:var(--r)}
+.sumbox>summary{list-style:none;display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;padding:14px 16px;cursor:pointer}
+.sumbox>summary::-webkit-details-marker{display:none}
+.sumbox>summary::before{content:"▸";color:var(--muted);transition:transform .15s;display:inline-block}
+.sumbox[open]>summary::before{transform:rotate(90deg)}
+.sumbox .sb-title{font-weight:600}
+.sb-body{display:flex;flex-direction:column;gap:16px;padding:0 16px 16px}
+.sb-body .state{flex:1 1 160px;min-width:0}
+.sum-head h2{font-size:19px}
+.overview{font-size:15.5px;max-width:68ch}
+.themes{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px}
+.theme{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:14px 16px;display:flex;flex-direction:column;gap:8px;min-width:0}
+.theme ul,.plain ul{margin:0;padding-left:1.1em}
+.theme li,.plain li{margin:3px 0}
+.refs{display:flex;gap:6px;flex-wrap:wrap}
+.ref{font:12px var(--font-mono);background:var(--sunk);border:0;border-radius:4px;padding:2px 6px;cursor:pointer;color:var(--muted)}
+.ref:hover{color:var(--accent)}
+.tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:var(--r);background:var(--surface)}
+table{border-collapse:collapse;width:100%;min-width:560px;font-size:14px}
+th,td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:12px;color:var(--muted);font-weight:600;letter-spacing:.04em;background:var(--sunk)}
+tr:last-child td{border-bottom:0}
+tr.done td.task{text-decoration:line-through;color:var(--muted)}
+.prio{font-size:12px;padding:1px 8px;border-radius:999px;white-space:nowrap}
+.prio.h{background:color-mix(in srgb,var(--err) 16%,transparent);color:var(--err)}
+.prio.m{background:color-mix(in srgb,var(--warn) 18%,transparent);color:var(--warn)}
+.prio.l{background:var(--sunk);color:var(--muted)}
+
+/* library */
+.mlist{display:flex;flex-direction:column;gap:8px}
+.mitem{display:flex;gap:12px;align-items:center;flex-wrap:wrap;background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:12px 14px}
+.mitem .info{flex:1 1 220px;min-width:0}
+.mitem .info b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* settings */
+fieldset{border:0;padding:0;margin:0;display:flex;flex-direction:column;gap:10px}
+legend{font-weight:600;margin-bottom:6px;padding:0}
+.choice{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px}
+.choice label{display:flex;gap:10px;align-items:flex-start;border:1px solid var(--line);border-radius:8px;padding:10px 12px;cursor:pointer;background:var(--surface)}
+.choice label:has(input:checked){border-color:var(--accent);background:var(--accent-soft)}
+.choice input{margin-top:5px;accent-color:var(--accent)}
+.choice small{display:block;color:var(--muted);font-size:12.5px;line-height:1.45}
+.keyrow{display:grid;grid-template-columns:110px 1fr auto;gap:8px;align-items:center}
+@media (max-width:520px){.keyrow{grid-template-columns:1fr auto}.keyrow>span{grid-column:1/-1}}
+details summary{cursor:pointer;color:var(--muted);font-size:14px}
+.note{font-size:13px;color:var(--muted);background:var(--sunk);border-radius:8px;padding:10px 12px}
+.empty{text-align:center;padding:36px 12px;color:var(--muted);display:flex;flex-direction:column;gap:12px;align-items:center}
+.example-tag{font-size:12px;color:var(--warn);border:1px solid currentColor;border-radius:999px;padding:1px 8px}
+
+#toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:8px;font-size:14px;max-width:calc(100% - 32px);z-index:50;box-shadow:0 6px 24px rgba(0,0,0,.2)}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<div id="authGate" class="gate" hidden>
+  <div class="gate-card">
+    <div class="gate-brand"><span class="gate-dot"></span><h1>회의록 레코더</h1></div>
+    <div id="gate-loading" class="muted small">로그인 상태를 확인하는 중…</div>
+    <div id="gate-login" hidden>
+      <p class="muted small" style="margin:0 0 14px">허가된 사용자만 쓸 수 있습니다. 로그인해 주세요.</p>
+      <button class="btn gbtn" id="gGoogle" type="button"><svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-8l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z"/></svg>Google 계정으로 로그인</button>
+      <div class="or"><span>또는 이메일로</span></div>
+      <form id="gForm" class="gform" novalidate>
+        <label class="label" for="gEmail">이메일</label><input type="text" inputmode="email" autocomplete="username" id="gEmail" placeholder="name@example.com">
+        <label class="label" for="gPw">비밀번호</label><input type="password" autocomplete="current-password" id="gPw" placeholder="6자 이상">
+        <div class="row" style="margin-top:6px"><button class="btn primary grow" id="gSignIn" type="submit">로그인</button><button class="btn grow" id="gSignUp" type="button">처음이면 가입하기</button></div>
+        <button class="btn ghost sm" id="gReset" type="button" style="align-self:flex-start">비밀번호를 잊었어요</button>
+      </form>
+    </div>
+    <div id="gate-verify" hidden>
+      <p style="margin:0 0 8px"><b id="verifyEmail"></b> 으로 인증 메일을 보냈습니다.</p>
+      <p class="muted small" style="margin:0 0 14px">메일의 링크를 누른 뒤 아래 "인증을 마쳤어요"를 누르세요. 메일이 안 보이면 스팸함을 확인하세요.</p>
+      <div class="row"><button class="btn primary" id="gVerified" type="button">인증을 마쳤어요</button><button class="btn" id="gResend" type="button">인증 메일 다시 보내기</button></div>
+      <button class="btn ghost sm" data-signout type="button" style="margin-top:8px">다른 계정으로 로그인</button>
+    </div>
+    <div id="gate-denied" hidden>
+      <p style="margin:0 0 8px"><b id="deniedEmail"></b> 계정은 아직 사용 허가가 없습니다.</p>
+      <p class="muted small" style="margin:0 0 14px" id="deniedHint">"사용 요청 보내기"를 누르면 관리자에게 요청이 전달됩니다. 승인되면 "다시 확인"을 누르세요.</p>
+      <div class="row"><button class="btn primary" id="gRequest" type="button">사용 요청 보내기</button><button class="btn" id="gRecheck" type="button">다시 확인</button></div>
+      <button class="btn ghost sm" data-signout type="button" style="margin-top:8px">다른 계정으로 로그인</button>
+    </div>
+    <p class="gate-msg" id="gateMsg" role="status"></p>
+  </div>
+</div>
+<header class="top">
+  <div class="wrap">
+    <div class="brand"><span class="dot" id="liveDot"></span><h1>회의록 레코더</h1><span class="cur" id="curTitle"></span><span class="pill" id="hdrSync" hidden></span><button class="btn sm primary" id="installBtn" hidden>앱 설치</button></div>
+    <nav class="tabs" role="tablist">
+      <button role="tab" data-tab="home" aria-selected="true">회의 목록</button>
+      <button role="tab" data-tab="record" aria-selected="false">녹음</button>
+      <button role="tab" data-tab="transcript" aria-selected="false">기록</button>
+      <button role="tab" data-tab="settings" aria-selected="false">설정</button>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+  <!-- ===== 회의 목록 ===== -->
+  <section class="tab" id="tab-home">
+    <div class="row" style="justify-content:space-between"><h2>회의 목록</h2>
+      <div class="row"><button class="btn sm primary" id="newRecBtn">새 회의 녹음</button><button class="btn sm" id="sampleBtn">예시 회의 열기</button></div></div>
+    <div class="note row" id="legacyBox" hidden><span class="grow" id="legacyText"></span><button class="btn sm primary" id="legacyImport" type="button">내 계정으로 가져오기</button><button class="btn sm ghost" id="legacyHide" type="button">숨기기</button></div>
+    <div class="folders" id="folderBar" role="toolbar" aria-label="프로젝트 폴더"></div>
+    <div class="row" id="folderTools"></div>
+    <input type="text" id="search" placeholder="회의 제목 검색" aria-label="회의 제목 검색">
+    <div class="mlist" id="mlist"></div>
+    <p class="small muted" style="margin:0">회의와 녹음은 이 브라우저에만 저장됩니다. 중요한 회의는 내보내기로 따로 보관하세요.</p>
+  </section>
+
+  <!-- ===== 녹음 ===== -->
+  <section class="tab" id="tab-record" hidden>
+    <div class="row">
+      <div class="grow"><label class="label" for="mTitle">회의 제목</label><input type="text" id="mTitle" placeholder="예: 3분기 연구과제 점검 회의"></div>
+      <div style="flex:0 1 200px;min-width:0"><label class="label" for="mFolder">프로젝트 폴더</label><select id="mFolder"></select></div>
+    </div>
+    <div class="panel deck">
+      <div class="deck-row">
+        <button class="rbtn" id="recBtn" aria-label="녹음 시작"><span></span></button>
+        <div class="deck-mid">
+          <div class="clock" id="clock">00:00:00</div>
+          <div class="state" id="recState">녹음 버튼을 누르면 시작합니다.</div>
+        </div>
+        <div class="row">
+          <button class="btn sm" id="pauseBtn" disabled>일시정지</button>
+          <button class="btn sm" id="fileBtn">파일 불러오기</button>
+          <input type="file" id="fileIn" accept="audio/*,video/*" hidden>
+        </div>
+      </div>
+      <canvas id="level" width="1040" height="56" aria-hidden="true"></canvas>
+      <div class="small muted">최대 3시간 · 10분 단위로 자동 저장</div>
+    </div>
+
+    <div class="panel" id="procPanel" hidden>
+      <div class="row" style="justify-content:space-between">
+        <div><h3 id="procTitle">전사 준비 완료</h3><div class="small muted" id="procSub"></div></div>
+        <div class="row">
+          <button class="btn primary" id="sttBtn">전사 시작</button>
+        </div>
+      </div>
+      <div class="meter" style="margin-top:12px"><i id="procBar"></i></div>
+      <div class="small muted" id="jobState" style="margin-top:8px"></div>
+      <ul class="seglist" id="segList" style="margin-top:6px"></ul>
+      <label class="small" style="margin-top:10px;display:flex;gap:8px;align-items:center;cursor:pointer"><input type="checkbox" id="autoStt" style="accent-color:var(--accent)"> 녹음하는 동안, 파일을 불러온 직후 자동으로 이어서 전사</label>
+    </div>
+  </section>
+
+  <!-- ===== 기록 ===== -->
+  <section class="tab" id="tab-transcript" hidden>
+    <div id="trEmpty" class="empty">
+      <div>아직 전사된 기록이 없습니다.</div>
+      <div class="small">녹음 탭에서 녹음하거나 파일을 불러온 뒤 전사를 실행하세요.</div>
+    </div>
+    <div id="trBody" class="trbody" hidden>
+      <div class="row" style="justify-content:space-between">
+        <div class="grow"><h2 id="trTitle"></h2><div class="small muted" id="trMeta"></div></div>
+        <div class="row">
+          <button class="btn sm" data-export="md">Markdown</button>
+          <button class="btn sm" data-export="doc">Word</button>
+          <button class="btn sm" data-export="txt">텍스트</button>
+          <button class="btn sm" id="copyTr">복사</button>
+        </div>
+      </div>
+      <div class="sticky-player" id="playerBox"><audio id="player" controls preload="metadata"></audio></div>
+      <details class="sumbox" id="sumBox" open>
+        <summary><span class="sb-title">테마별 요약 · 액션 아이템</span><span class="small muted" id="sumEngineNote"></span></summary>
+        <div class="sb-body">
+          <div class="row">
+            <select id="sumEngineSel" style="width:auto" aria-label="요약 엔진">
+              <option value="claude">Claude</option><option value="gemini">Gemini</option><option value="openai">ChatGPT</option>
+            </select>
+            <button class="btn primary sm" id="sumBtn">요약 만들기</button>
+            <span class="state" id="sumState"></span>
+          </div>
+          <div id="sumOut"></div>
+        </div>
+      </details>
+      <div class="row" style="justify-content:space-between;margin-top:6px"><div class="label">전체 기록</div></div>
+      <details class="panel" id="spPanel">
+        <summary>화자 이름 바꾸기 · 합치기</summary>
+        <div class="speakers" id="spList" style="margin-top:12px"></div>
+        <p class="small muted" style="margin:10px 0 0">화자가 실제보다 많이 잡혔다면 "합치기"로 같은 사람을 하나로 묶으세요. 문장은 눌러서 바로 고칠 수 있습니다.</p>
+      </details>
+      <div class="lines" id="lines"></div>
+    </div>
+  </section>
+
+
+  <!-- ===== 설정 ===== -->
+  <section class="tab" id="tab-settings" hidden>
+    <fieldset class="panel" id="acctBox" hidden>
+      <legend>계정</legend>
+      <div class="row"><span class="grow"><b id="acctEmail"></b><br><span class="small muted" id="acctSync"></span></span>
+        <button class="btn sm" id="logoutBtn" type="button">로그아웃</button><button class="btn sm danger" id="wipeBtn" type="button">로그아웃 · 이 기기 기록 지우기</button></div>
+      <p class="small muted" style="margin:0">회의 기록·요약·폴더는 계정에 저장되어 로그인한 모든 기기에서 볼 수 있습니다. 녹음 파일과 API 키는 이 기기에만 저장됩니다. 여러 사람이 쓰는 PC라면 "이 기기 기록 지우기"로 로그아웃하세요.</p>
+    </fieldset>
+    <fieldset class="panel" id="adminBox" hidden>
+      <legend>사용자 관리 <span class="pill">관리자</span></legend>
+      <div id="reqBox"></div>
+      <div class="label">사용을 허가한 메일 주소</div>
+      <div class="folders" id="allowList"></div>
+      <div class="row"><input type="text" inputmode="email" id="allowAdd" class="grow" placeholder="허가할 메일 주소 (쉼표로 여러 개)"><button class="btn sm primary" id="allowAddBtn" type="button">추가</button></div>
+      <div class="label" style="margin-top:6px">도메인 전체 허가 (선택)</div>
+      <div class="row"><input type="text" id="allowDomains" class="grow" placeholder="예: keti.re.kr (이 주소로 끝나는 메일은 모두 허가)"><button class="btn sm" id="allowDomBtn" type="button">저장</button></div>
+      <p class="small muted" style="margin:0">허가를 취소해도 이미 로그인한 사람은 다음 동기화 때부터 막힙니다.</p>
+    </fieldset>
+    <div class="note" id="installHint"></div>
+    <fieldset class="panel">
+      <legend>전사 엔진</legend>
+      <div class="choice">
+        <label><input type="radio" name="stt" value="gemini"><span><b>Gemini</b><small>무료 등급으로 시작 가능. 10분 구간씩 보내며 화자 라벨을 이어서 맞춥니다.</small></span></label>
+        <label><input type="radio" name="stt" value="openai"><span><b>ChatGPT (OpenAI)</b><small>화자 분리 전용 모델. 유료. 첫 구간의 목소리 샘플로 이후 구간 화자를 맞춥니다.</small></span></label>
+      </div>
+      <p class="small muted" style="margin:0">Claude API는 현재 오디오 파일 전사를 지원하지 않아 요약 엔진으로 사용합니다. 모델 선택과 점검은 이 화면 아래쪽에서 합니다.</p>
+    </fieldset>
+
+    <fieldset class="panel">
+      <legend>요약 엔진</legend>
+      <div class="choice">
+        <label><input type="radio" name="sum" value="claude"><span><b>Claude</b><small>긴 회의도 한 번에 정리</small></span></label>
+        <label><input type="radio" name="sum" value="gemini"><span><b>Gemini</b><small>무료 등급 가능</small></span></label>
+        <label><input type="radio" name="sum" value="openai"><span><b>ChatGPT</b><small>OpenAI 키 사용</small></span></label>
+      </div>
+    </fieldset>
+
+    <fieldset class="panel">
+      <legend>언어 · 참석자</legend>
+      <div class="row">
+        <div class="grow"><label class="label" for="lang">회의 주 언어</label>
+          <select id="lang">
+            <option value="auto">자동 감지 (여러 언어 혼용 포함)</option>
+            <option value="ko">한국어</option><option value="en">영어</option><option value="ja">일본어</option>
+            <option value="zh">중국어</option><option value="es">스페인어</option><option value="fr">프랑스어</option>
+            <option value="de">독일어</option><option value="vi">베트남어</option><option value="ru">러시아어</option>
+          </select></div>
+        <div class="grow"><label class="label" for="sumLang">요약 작성 언어</label>
+          <select id="sumLang"><option value="ko">한국어</option><option value="en">영어</option><option value="same">회의 언어와 같게</option></select></div>
+        <div style="flex:0 1 140px"><label class="label" for="nSpk">참석자 수 (선택)</label><input type="number" id="nSpk" min="1" max="20" placeholder="모름"></div>
+      </div>
+    </fieldset>
+
+    <fieldset class="panel">
+      <legend>API 키</legend>
+      <div class="keyrow"><span>Gemini</span><input type="password" id="geminiKey" autocomplete="off" placeholder="AIza…"><button class="btn sm" data-reveal="geminiKey">보기</button></div>
+      <div class="keyrow"><span>OpenAI</span><input type="password" id="openaiKey" autocomplete="off" placeholder="sk-…"><button class="btn sm" data-reveal="openaiKey">보기</button></div>
+      <div class="keyrow"><span>Claude</span><input type="password" id="claudeKey" autocomplete="off" placeholder="sk-ant-…"><button class="btn sm" data-reveal="claudeKey">보기</button></div>
+      <div class="row"><button class="btn primary" id="saveKeys">API 키 저장</button><span class="small" id="keyState" role="status"></span></div>
+      <div class="note">
+        키 발급: Gemini는 aistudio.google.com/apikey, OpenAI는 platform.openai.com/api-keys, Claude는 console.anthropic.com 에서 받을 수 있습니다.<br>
+        키는 이 브라우저에만 저장되고, 오디오와 기록은 선택한 회사의 API로만 전송됩니다. Gemini 무료 등급은 입력 데이터가 서비스 개선에 쓰일 수 있으므로 기밀 회의는 유료 등급 키를 쓰세요.
+      </div>
+    </fieldset>
+
+      <hr style="border:0;border-top:1px solid var(--line);margin:8px 0">
+    <div class="row" style="justify-content:space-between"><h2 id="models">모델 선택 · 점검</h2>
+      <div class="row"><button class="btn sm" id="fetchModels">모델 목록 불러오기</button><button class="btn sm primary" id="testAll">전체 점검</button></div></div>
+    <p class="small muted" style="margin:0" id="modelState">"모델 목록 불러오기"는 설정에 넣은 API 키로 각 회사에서 지금 쓸 수 있는 모델을 가져옵니다. 전사 목록에는 오디오를 받는 모델만 추립니다.</p>
+    <div class="panel" style="display:flex;flex-direction:column;gap:10px">
+      <div class="label">점검에 쓸 오디오</div>
+      <div class="choice">
+        <label><input type="radio" name="testsrc" value="tone" checked><span><b>테스트 신호음</b><small>1.5초 신호음으로 오디오 입력을 받는지만 빠르게 확인</small></span></label>
+        <label><input type="radio" name="testsrc" value="voice"><span><b>내 목소리 5초</b><small>직접 말한 내용을 실제로 받아쓰는지 확인</small></span></label>
+      </div>
+      <div class="row" id="voiceRow" hidden><button class="btn sm" id="voiceBtn">5초 녹음하기</button><span class="small muted" id="voiceState">녹음 후 점검하면 받아쓴 내용을 보여 줍니다.</span></div>
+    </div>
+    <div class="mlist">
+      <div class="mrow" id="row-geminiModel">
+        <div class="mhead"><b>Gemini</b><span class="pill">전사</span><span class="small muted msrc" id="src-geminiModel"></span></div>
+        <div class="row">
+          <select id="sel-geminiModel" data-mfield="geminiModel" class="grow" aria-label="Gemini 모델"></select>
+          <input type="text" id="cus-geminiModel" data-mcustom="geminiModel" class="grow" placeholder="모델 ID 직접 입력" hidden>
+          <button class="btn sm" data-test="geminiModel">점검</button>
+        </div>
+        <div class="mres" id="res-geminiModel"></div>
+      </div>
+      <div class="mrow" id="row-geminiSumModel">
+        <div class="mhead"><b>Gemini</b><span class="pill">요약</span><span class="small muted msrc" id="src-geminiSumModel"></span></div>
+        <div class="row">
+          <select id="sel-geminiSumModel" data-mfield="geminiSumModel" class="grow" aria-label="Gemini 모델"></select>
+          <input type="text" id="cus-geminiSumModel" data-mcustom="geminiSumModel" class="grow" placeholder="모델 ID 직접 입력" hidden>
+          <button class="btn sm" data-test="geminiSumModel">점검</button>
+        </div>
+        <div class="mres" id="res-geminiSumModel"></div>
+      </div>
+      <div class="mrow" id="row-openaiSttModel">
+        <div class="mhead"><b>OpenAI</b><span class="pill">전사</span><span class="small muted msrc" id="src-openaiSttModel"></span></div>
+        <div class="row">
+          <select id="sel-openaiSttModel" data-mfield="openaiSttModel" class="grow" aria-label="OpenAI 모델"></select>
+          <input type="text" id="cus-openaiSttModel" data-mcustom="openaiSttModel" class="grow" placeholder="모델 ID 직접 입력" hidden>
+          <button class="btn sm" data-test="openaiSttModel">점검</button>
+        </div>
+        <div class="mres" id="res-openaiSttModel"></div>
+      </div>
+      <div class="mrow" id="row-openaiModel">
+        <div class="mhead"><b>ChatGPT</b><span class="pill">요약</span><span class="small muted msrc" id="src-openaiModel"></span></div>
+        <div class="row">
+          <select id="sel-openaiModel" data-mfield="openaiModel" class="grow" aria-label="ChatGPT 모델"></select>
+          <input type="text" id="cus-openaiModel" data-mcustom="openaiModel" class="grow" placeholder="모델 ID 직접 입력" hidden>
+          <button class="btn sm" data-test="openaiModel">점검</button>
+        </div>
+        <div class="mres" id="res-openaiModel"></div>
+      </div>
+      <div class="mrow" id="row-claudeModel">
+        <div class="mhead"><b>Claude</b><span class="pill">요약</span><span class="small muted msrc" id="src-claudeModel"></span></div>
+        <div class="row">
+          <select id="sel-claudeModel" data-mfield="claudeModel" class="grow" aria-label="Claude 모델"></select>
+          <input type="text" id="cus-claudeModel" data-mcustom="claudeModel" class="grow" placeholder="모델 ID 직접 입력" hidden>
+          <button class="btn sm" data-test="claudeModel">점검</button>
+        </div>
+        <div class="mres" id="res-claudeModel"></div>
+      </div>
+      <div class="mrow"><div class="mhead"><b>Claude</b><span class="pill">전사</span></div><div class="mres"><span class="pill warn">지원 안 됨</span><span class="small muted">Claude API는 현재 오디오 파일 입력을 받지 않아 전사에는 쓸 수 없습니다.</span></div></div>
+    </div>
+    <p class="small muted" style="margin:0">점검은 각 모델을 한 번 짧게 호출하므로 소액의 사용료가 생길 수 있습니다. <button class="btn sm ghost" id="resetModels">기본 모델로 되돌리기</button></p>
+    </section>
+</main>
+<div id="toast" hidden></div>
+
+<script>
+'use strict';
+const $=(s,r=document)=>r.querySelector(s);
+const $$=(s,r=document)=>[...r.querySelectorAll(s)];
+const SEG_SEC=600, MAX_SEC=3*3600, UPLOAD_SEG_SEC=300, OPENAI_PIECE_SEC=180;
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function fmt(sec){sec=Math.max(0,Math.floor(sec||0));const h=Math.floor(sec/3600),m=Math.floor(sec%3600/60),s=sec%60;return [h,m,s].map(n=>String(n).padStart(2,'0')).join(':')}
+function parseTime(v){if(typeof v==='number')return v;if(!v)return 0;const p=String(v).trim().replace(/[^\d:.]/g,'').split(':').map(Number);if(!p.length||p.some(isNaN))return 0;return p.reduce((a,b)=>a*60+b,0)}
+function toast(msg,ms=3200){const t=$('#toast');t.textContent=msg;t.hidden=false;clearTimeout(toast._t);toast._t=setTimeout(()=>t.hidden=true,ms)}
+const LANG_NAMES={auto:'자동 감지',ko:'한국어',en:'영어',ja:'일본어',zh:'중국어',es:'스페인어',fr:'프랑스어',de:'독일어',vi:'베트남어',ru:'러시아어'};
+const ENGINE_NAMES={gemini:'Gemini',openai:'ChatGPT',claude:'Claude'};
+
+/* ---------- 설정 ---------- */
+const MODEL_DEFAULTS={geminiModel:'gemini-3.6-flash',geminiSumModel:'gemini-3.6-flash',openaiSttModel:'gpt-4o-transcribe-diarize',openaiModel:'gpt-5.5',claudeModel:'claude-sonnet-5-5'};
+// 로그인하면 사용자마다 저장 공간을 따로 씁니다(같은 PC를 여러 명이 써도 섞이지 않게).
+let NS='';const LK=k=>'mr.'+(NS?NS+'.':'')+k;
+const lsGet=(k,d)=>{try{const v=localStorage.getItem(k);return v==null?d:JSON.parse(v)}catch(e){return d}};
+const lsSet=(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}};
+const S_DEFAULTS={autoStt:true,geminiKey:'',openaiKey:'',claudeKey:'',stt:'gemini',sum:'claude',lang:'auto',sumLang:'ko',nSpk:'',...MODEL_DEFAULTS};
+const S={...S_DEFAULTS};
+Object.assign(S,lsGet(LK('settings'),{}));
+function saveSettings(){lsSet(LK('settings'),S)}
+
+/* ---------- 저장소 (IndexedDB, 실패 시 메모리) ---------- */
+const mem={meetings:new Map(),audio:new Map()};
+let dbp=null, dbOk=true;
+const dbName=()=>'meeting-recorder'+(NS?'-'+NS:'');
+function openDB(name){return new Promise((res,rej)=>{try{const r=indexedDB.open(name,1);r.onupgradeneeded=()=>{const d=r.result;if(!d.objectStoreNames.contains('meetings'))d.createObjectStore('meetings',{keyPath:'id'});if(!d.objectStoreNames.contains('audio'))d.createObjectStore('audio')};r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)}catch(e){rej(e)}})}
+function db(){if(!dbp)dbp=new Promise((res,rej)=>{try{const r=indexedDB.open(dbName(),1);r.onupgradeneeded=()=>{const d=r.result;if(!d.objectStoreNames.contains('meetings'))d.createObjectStore('meetings',{keyPath:'id'});if(!d.objectStoreNames.contains('audio'))d.createObjectStore('audio')};r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)}catch(e){rej(e)}});return dbp}
+async function tx(store,mode,fn){const d=await db();return new Promise((res,rej)=>{const t=d.transaction(store,mode);const s=t.objectStore(store);let out;const r=fn(s);if(r)r.onsuccess=()=>{out=r.result};t.oncomplete=()=>res(out);t.onerror=()=>rej(t.error);t.onabort=()=>rej(t.error)})}
+function warnDb(e){if(dbOk){dbOk=false;console.warn(e);toast('브라우저 저장소를 쓸 수 없어 이 창을 닫으면 기록이 사라집니다. 내보내기로 보관하세요.',6000)}}
+const store={
+  async putMeeting(m){m.updatedAt=Date.now();await this.putLocal(m);cloudMark(m.id)},
+  async putLocal(m){const plain=JSON.parse(JSON.stringify(m,(k,v)=>k.startsWith('_')?undefined:v));mem.meetings.set(m.id,plain);try{await tx('meetings','readwrite',s=>s.put(plain))}catch(e){warnDb(e)}},
+  async getMeeting(id){try{const v=await tx('meetings','readonly',s=>s.get(id));if(v)return v}catch(e){}return mem.meetings.get(id)},
+  async allMeetings(){let list=[];try{list=await tx('meetings','readonly',s=>s.getAll())||[]}catch(e){}const ids=new Set(list.map(m=>m.id));for(const m of mem.meetings.values())if(!ids.has(m.id))list.push(m);return list},
+  async putAudio(key,blob){mem.audio.set(key,blob);try{await tx('audio','readwrite',s=>s.put(blob,key))}catch(e){warnDb(e)}},
+  async getAudio(key){if(mem.audio.has(key))return mem.audio.get(key);try{const b=await tx('audio','readonly',s=>s.get(key));if(b)mem.audio.set(key,b);return b}catch(e){return null}},
+  async del(m){await this.delLocal(m);cloudDelete(m.id)},
+  async delLocal(m){mem.meetings.delete(m.id);try{await tx('meetings','readwrite',s=>s.delete(m.id))}catch(e){}for(const sg of m.segments||[]){const k=m.id+':'+sg.idx;mem.audio.delete(k);try{await tx('audio','readwrite',s=>s.delete(k))}catch(e){}}}
+};
+
+/* ---------- 프로젝트 폴더 ---------- */
+let folders=lsGet(LK('folders'),[]);
+let curFolder=lsGet(LK('folder'),'all');let foldersAt=lsGet(LK('foldersAt'),0);
+let folderMode=null; // 'new' | 'rename' | 'delete'
+function saveFolders(changed=true){if(changed){foldersAt=Date.now();lsSet(LK('foldersAt'),foldersAt);cloudPushFolders()}lsSet(LK('folders'),folders);lsSet(LK('folder'),curFolder)}
+const folderExists=id=>folders.some(f=>f.id===id);
+const folderName=id=>folders.find(f=>f.id===id)?.name||'미분류';
+function folderOptions(sel){return `<option value="">미분류</option>`+folders.map(f=>`<option value="${f.id}" ${f.id===sel?'selected':''}>${esc(f.name)}</option>`).join('')}
+function syncFolderSelect(){const el=$('#mFolder');const v=M&&!M.example?(M.folder||''):(folderExists(curFolder)?curFolder:'');el.innerHTML=folderOptions(v);el.value=folderExists(v)?v:''}
+
+/* ---------- 회의 모델 ---------- */
+let M=null; // 현재 회의
+function defaultTitle(){const d=new Date();return `${d.getMonth()+1}월 ${d.getDate()}일 회의`}
+function newMeeting(title,source){return{folder:source==='example'?'':($('#mFolder').value||''),id:'m'+Date.now().toString(36)+Math.random().toString(36).slice(2,6),title:title||defaultTitle(),createdAt:Date.now(),duration:0,source,segments:[],lines:[],speakers:{},refs:{},summary:null,sttEngine:null,doneTasks:{}}}
+function save(){if(M&&!M.example)store.putMeeting(M)}
+function spName(id){return M?.speakers?.[id]||id}
+function spColor(id){const ids=Object.keys(M?.speakers||{});const i=Math.max(0,ids.indexOf(id));return `var(--sp${(i%8)+1})`}
+function ensureSpeaker(id){if(!M.speakers[id]){const n=(id.match(/\d+/)||[Object.keys(M.speakers).length+1])[0];M.speakers[id]='화자'+n}return id}
+function nextSpeakerId(){let n=1;while(M.speakers['S'+n])n++;return 'S'+n}
+function setCurrent(m){M=m;lsSet(LK('current'),m?.example?'':m?.id||'');$('#curTitle').textContent=m?m.title:'';if(m&&!m.example)$('#mTitle').value=m.title;syncFolderSelect();renderAll()}
+
+/* ---------- 녹음 ---------- */
+let R=null;
+function pickMime(){const c=['audio/webm;codecs=opus','audio/webm','audio/mp4;codecs=mp4a.40.2','audio/mp4','audio/ogg;codecs=opus'];if(!window.MediaRecorder)return null;for(const t of c)if(MediaRecorder.isTypeSupported?.(t))return t;return ''}
+function elapsed(){if(!R)return 0;return R.acc+(R.paused?0:(performance.now()-R.resumeAt)/1000)}
+async function startRecording(){
+  if(!navigator.mediaDevices?.getUserMedia||!window.MediaRecorder){toast('이 브라우저는 녹음을 지원하지 않습니다. 최신 Chrome·Edge·Safari를 사용하세요.');return}
+  if(!window.isSecureContext){toast('녹음은 https 주소나 내 컴퓨터에서 연 파일에서만 동작합니다.');return}
+  let stream;
+  try{stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true,channelCount:1}})}
+  catch(e){toast('마이크 사용 권한이 필요합니다. 주소창의 권한 설정을 확인하세요.');return}
+  const m=newMeeting($('#mTitle').value.trim(),'mic');setCurrent(m);
+  R={stream,mime:pickMime(),acc:0,resumeAt:performance.now(),paused:false,stopping:false,seg:null,recorder:null};
+  try{const AC=window.AudioContext||window.webkitAudioContext;R.ctx=new AC();const src=R.ctx.createMediaStreamSource(stream);R.an=R.ctx.createAnalyser();R.an.fftSize=1024;src.connect(R.an);R.levels=[]}catch(e){}
+  stream.getAudioTracks()[0].addEventListener('ended',()=>{if(R&&!R.stopping){toast('마이크 연결이 끊겨 녹음을 종료했습니다.');stopRecording()}});
+  startSegment();
+  R.timer=setInterval(tick,500);
+  try{R.wake=await navigator.wakeLock?.request('screen')}catch(e){}
+  document.addEventListener('visibilitychange',reWake);
+  drawLevel();renderRecord();
+}
+async function reWake(){if(R&&document.visibilityState==='visible'&&(!R.wake||R.wake.released)){try{R.wake=await navigator.wakeLock?.request('screen')}catch(e){}}}
+function startSegment(){
+  const opts={audioBitsPerSecond:32000};if(R.mime)opts.mimeType=R.mime;
+  let r;try{r=new MediaRecorder(R.stream,opts)}catch(e){r=new MediaRecorder(R.stream)}
+  const seg={idx:M.segments.length,start:elapsed(),dur:0,mime:'',status:'recording'};
+  M.segments.push(seg);
+  const chunks=[];
+  r.ondataavailable=e=>{if(e.data&&e.data.size)chunks.push(e.data)};
+  seg._saved=new Promise(res=>{r.onstop=async()=>{
+    const blob=new Blob(chunks,{type:r.mimeType||R?.mime||'audio/webm'});
+    seg.mime=blob.type;seg.dur=Math.max(0,(seg._end??elapsed())-seg.start);seg.status=blob.size?'pending':'empty';seg.size=blob.size;
+    await store.putAudio(M.id+':'+seg.idx,blob);save();renderSegList();res();
+    if(S.autoStt&&R&&!R.stopping&&seg.status==='pending')runTranscription({auto:true});
+  }});
+  r.start(5000);R.recorder=r;R.seg=seg;save();
+}
+function tick(){
+  if(!R)return;const t=elapsed();
+  $('#clock').firstChild.nodeValue=fmt(t);
+  if(t>=MAX_SEC){toast('최대 녹음 시간 3시간에 도달해 자동 종료했습니다.');stopRecording();return}
+  if(!R.paused&&!R.stopping&&t-R.seg.start>=SEG_SEC){const old=R.recorder,oldSeg=R.seg;oldSeg._end=t;startSegment();try{old.stop()}catch(e){}}
+  const s=$('#recState');const segN=M.segments.length;
+  s.textContent=R.paused?'일시정지됨':`녹음 중 · 남은 시간 ${fmt(MAX_SEC-t)}`;if(segN)renderRecord();
+}
+function togglePause(){
+  if(!R)return;
+  if(R.paused){try{R.recorder.resume()}catch(e){}R.resumeAt=performance.now();R.paused=false}
+  else{R.acc=elapsed();try{R.recorder.pause()}catch(e){}R.paused=true}
+  renderRecord();tick();
+}
+async function stopRecording(){
+  if(!R||R.stopping)return;R.stopping=true;const t=elapsed();R.seg._end=t;
+  clearInterval(R.timer);
+  try{R.recorder.stop()}catch(e){}
+  await Promise.all(M.segments.map(s=>s._saved).filter(Boolean));
+  R.stream.getTracks().forEach(tr=>tr.stop());try{R.ctx?.close()}catch(e){}try{R.wake?.release()}catch(e){}
+  document.removeEventListener('visibilitychange',reWake);
+  M.duration=t;M.segments=M.segments.filter(s=>s.status!=='empty'||s.size);
+  R=null;save();renderRecord();renderSegList();
+  if(S.autoStt&&hasKey(S.stt)){toast('녹음을 저장했습니다. 이어서 전사합니다.');runTranscription({auto:true})}
+  else toast('녹음을 저장했습니다. 전사를 시작하세요.');
+}
+function drawLevel(){
+  const cv=$('#level'),g=cv.getContext('2d');
+  const css=getComputedStyle(document.documentElement);
+  const loop=()=>{
+    const W=cv.width,H=cv.height;g.clearRect(0,0,W,H);
+    if(R&&R.an){
+      const d=new Uint8Array(R.an.fftSize);R.an.getByteTimeDomainData(d);
+      let sum=0;for(const v of d){const x=(v-128)/128;sum+=x*x}
+      const lvl=R.paused?0:Math.min(1,Math.sqrt(sum/d.length)*4);
+      R.levels.push(lvl);if(R.levels.length>130)R.levels.shift();
+      const bw=W/130;g.fillStyle=css.getPropertyValue(R.paused?'--muted':'--accent').trim()||'#0d5f73';
+      R.levels.forEach((l,i)=>{const h=Math.max(3,l*H*.9);g.fillRect(i*bw+1,(H-h)/2,bw-3,h)});
+      requestAnimationFrame(loop);
+    }else{g.fillStyle=css.getPropertyValue('--line').trim()||'#ddd';g.fillRect(0,H/2-1,W,2)}
+  };loop();
+}
+
+/* ---------- 파일 불러오기 ---------- */
+async function decodeToPcm(blob,onStep){
+  const ab=await blob.arrayBuffer();
+  const AC=window.AudioContext||window.webkitAudioContext;let ac;try{ac=new AC({sampleRate:16000})}catch(e){ac=new AC()}
+  let buf;try{buf=await new Promise((res,rej)=>{const p=ac.decodeAudioData(ab,res,rej);if(p&&p.then)p.then(res,rej)})}finally{try{ac.close()}catch(e){}}
+  const OAC=window.OfflineAudioContext||window.webkitOfflineAudioContext;
+  const off=new OAC(1,Math.max(1,Math.ceil(buf.duration*16000)),16000);
+  const src=off.createBufferSource();src.buffer=buf;src.connect(off.destination);src.start();
+  const out=await off.startRendering();return out.getChannelData(0);
+}
+function encodeWav(f32,sr=16000){
+  const n=f32.length,buf=new ArrayBuffer(44+n*2),v=new DataView(buf);
+  const w=(o,s)=>{for(let i=0;i<s.length;i++)v.setUint8(o+i,s.charCodeAt(i))};
+  w(0,'RIFF');v.setUint32(4,36+n*2,true);w(8,'WAVE');w(12,'fmt ');v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,1,true);
+  v.setUint32(24,sr,true);v.setUint32(28,sr*2,true);v.setUint16(32,2,true);v.setUint16(34,16,true);w(36,'data');v.setUint32(40,n*2,true);
+  for(let i=0,o=44;i<n;i++,o+=2){const s=Math.max(-1,Math.min(1,f32[i]));v.setInt16(o,s<0?s*0x8000:s*0x7fff,true)}
+  return new Blob([buf],{type:'audio/wav'});
+}
+async function importFile(file){
+  if(R){toast('녹음 중에는 파일을 불러올 수 없습니다.');return}
+  if(file.size>400e6){toast('파일이 너무 큽니다(400MB 초과). 음성만 추출한 파일로 다시 시도하세요.');return}
+  const m=newMeeting($('#mTitle').value.trim()||file.name.replace(/\.[^.]+$/,''),'file');setCurrent(m);
+  const st=$('#recState');st.textContent='파일을 분석하는 중… (긴 파일은 1~2분 걸릴 수 있습니다)';
+  try{
+    const pcm=await decodeToPcm(file);const dur=pcm.length/16000;
+    if(dur>MAX_SEC+60)toast('3시간을 넘는 파일입니다. 전체를 처리하지만 시간이 오래 걸릴 수 있습니다.',5000);
+    const step=UPLOAD_SEG_SEC*16000;
+    for(let i=0,idx=0;i<pcm.length;i+=step,idx++){
+      const part=pcm.subarray(i,Math.min(pcm.length,i+step));
+      const blob=encodeWav(part);
+      M.segments.push({idx,start:i/16000,dur:part.length/16000,mime:'audio/wav',status:'pending',size:blob.size});
+      await store.putAudio(M.id+':'+idx,blob);
+    }
+    M.duration=dur;save();st.textContent=`불러오기 완료 · 길이 ${fmt(dur)}`;
+    if(S.autoStt&&hasKey(S.stt))setTimeout(()=>runTranscription({auto:true}),0);
+  }catch(e){console.error(e);st.textContent='이 파일을 읽지 못했습니다. mp3·m4a·wav·webm 형식을 권장하며, 매우 긴 파일은 PC에서 시도하세요.';M.segments=[];}
+  renderAll();
+}
+
+/* ---------- API 공통 ---------- */
+function blobToB64(blob){return new Promise((res,rej)=>{const fr=new FileReader();fr.onload=()=>res(String(fr.result).split(',')[1]);fr.onerror=()=>rej(fr.error);fr.readAsDataURL(blob)})}
+function statusHint(s){return s===401||s===403?'API 키가 올바르지 않거나 권한이 없습니다. ':s===404?'모델 이름을 확인하세요(설정 > 고급). ':s===413?'오디오 구간이 너무 큽니다. ':s===429?'요청 한도를 넘었습니다. 잠시 후 다시 시도하세요. ':''}
+async function apiFetch(url,opts,label,onWait){
+  for(let i=0;i<4;i++){
+    let res;
+    try{res=await fetch(url,opts)}catch(e){if(i===3)throw new Error(`${label}: 네트워크에 연결할 수 없습니다. 인터넷 연결을 확인하세요.`);await sleep(3000*(i+1));continue}
+    const txt=await res.text();let data=null;try{data=JSON.parse(txt)}catch(e){}
+    if(res.ok)return data;
+    const msg=data?.error?.message||data?.message||txt.slice(0,240);
+    if((res.status===429||res.status>=500)&&i<3){onWait?.(`대기 후 재시도 (${i+1}/3)`);await sleep([6000,20000,45000][i]);continue}
+    const err=new Error(`${label} 오류 ${res.status}: ${statusHint(res.status)}${msg}`);err.status=res.status;throw err;
+  }
+}
+function parseJSONLoose(t,want){
+  t=String(t||'').trim().replace(/^```(?:json)?\s*/i,'').replace(/```\s*$/,'').trim();
+  try{return JSON.parse(t)}catch(e){}
+  const open=want==='object'?'{':'[',close=want==='object'?'}':']';
+  const a=t.indexOf(open),b=t.lastIndexOf(close);
+  if(a>=0&&b>a){try{return JSON.parse(t.slice(a,b+1))}catch(e){}}
+  throw new Error('모델 응답을 해석하지 못했습니다. 다시 시도하세요.');
+}
+function needKey(engine){const k={gemini:S.geminiKey,openai:S.openaiKey,claude:S.claudeKey}[engine];if(!k){showTab('settings');throw new Error(`${ENGINE_NAMES[engine]} API 키를 먼저 설정에 입력하세요.`)}return k.trim()}
+function geminiText(data){const parts=data?.candidates?.[0]?.content?.parts||[];const t=parts.filter(p=>!p.thought).map(p=>p.text||'').join('');if(!t){const r=data?.candidates?.[0]?.finishReason||data?.promptFeedback?.blockReason;throw new Error('Gemini가 빈 응답을 보냈습니다'+(r?` (${r})`:''))}return t}
+
+/* ---------- 전사: Gemini ---------- */
+async function geminiTranscribe(blob,seg,onWait){
+  const key=needKey('gemini');
+  const b64=await blobToB64(blob);
+  const mime=(blob.type||'audio/webm').split(';')[0];
+  const prev=M.lines.filter(l=>l.t<seg.start).slice(-6).map(l=>`${l.sp}: ${l.text}`).join('\n');
+  const known=Object.keys(M.speakers);
+  const prompt=[
+`당신은 회의 속기사입니다. 첨부 오디오는 전체 회의 중 ${fmt(seg.start)}부터 시작하는 약 ${Math.max(1,Math.round(seg.dur/60))}분 길이의 구간입니다.`,
+`규칙:`,
+`- 들리는 발언을 빠짐없이 원래 언어 그대로 받아 적으세요. 번역하거나 요약하지 마세요. 회의 주 언어: ${LANG_NAMES[S.lang]||'자동 감지'}. 다른 언어가 섞이면 들리는 언어 그대로 적습니다.`,
+`- 목소리로 화자를 구분하여 "S1", "S2" 같은 라벨을 붙이세요.${S.nSpk?` 참석자는 약 ${S.nSpk}명입니다.`:''}`,
+known.length?`- 이전 구간에서 쓴 라벨: ${known.join(', ')}. 같은 목소리는 같은 라벨을 유지하고, 처음 듣는 목소리에만 다음 번호를 붙이세요.`:'',
+`- 화자가 바뀌거나 한 발언이 30초를 넘으면 새 항목으로 나누세요.`,
+`- start는 이 오디오 파일의 시작을 0으로 한 "MM:SS" 시각입니다.`,
+`- 침묵·잡음은 건너뛰고, 알아듣기 어려운 부분은 [불명확]으로 표시하세요. 들리지 않은 말을 지어내지 마세요.`,
+`출력은 JSON 배열 하나만: [{"start":"00:05","speaker":"S1","text":"..."}]`,
+prev?`\n직전 구간의 마지막 발언입니다(라벨 참고용, 다시 적지 마세요):\n${prev}`:''
+  ].filter(Boolean).join('\n');
+  const url=`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(S.geminiModel.trim())}:generateContent`;
+  const data=await apiFetch(url,{method:'POST',headers:{'Content-Type':'application/json','x-goog-api-key':key},
+    body:JSON.stringify({contents:[{role:'user',parts:[{inline_data:{mime_type:mime,data:b64}},{text:prompt}]}],generationConfig:{responseMimeType:'application/json',maxOutputTokens:65536}})},'Gemini',onWait);
+  let arr=parseJSONLoose(geminiText(data),'array');
+  if(!Array.isArray(arr))arr=arr.segments||arr.items||Object.values(arr).find(Array.isArray)||[];
+  return arr.filter(x=>x&&String(x.text||'').trim()).map(x=>{
+    let sp=String(x.speaker||'S1').trim();const n=sp.match(/\d+/);sp=n?'S'+n[0]:(Object.keys(M.speakers).find(k=>M.speakers[k]===sp)||'S1');
+    ensureSpeaker(sp);
+    return{t:Math.min(seg.start+Math.max(0,parseTime(x.start)),seg.start+seg.dur),sp,text:String(x.text).trim()};
+  });
+}
+
+/* ---------- 전사: OpenAI ---------- */
+async function openaiTranscribe(blob,seg,onWait,onPiece){
+  const key=needKey('openai');
+  const pcm=await decodeToPcm(blob);
+  const step=OPENAI_PIECE_SEC*16000,out=[];
+  const pieces=Math.max(1,Math.ceil(pcm.length/step));
+  for(let p=0;p<pieces;p++){
+    onPiece?.(p+1,pieces);
+    const off=p*step,part=pcm.subarray(off,Math.min(pcm.length,off+step));
+    if(part.length<16000*0.5)continue;
+    const wav=encodeWav(part);
+    const refs=Object.entries(M.refs).slice(0,4);
+    const diar=/diarize/.test(S.openaiSttModel);
+    const build=(withExtras)=>sttForm(wav,'chunk.wav',{refs,extras:withExtras});
+    let data;
+    try{data=await apiFetch('https://api.openai.com/v1/audio/transcriptions',{method:'POST',headers:{Authorization:'Bearer '+key},body:build(true)},'OpenAI',onWait)}
+    catch(e){if(e.status===400&&(refs.length||S.lang!=='auto'))data=await apiFetch('https://api.openai.com/v1/audio/transcriptions',{method:'POST',headers:{Authorization:'Bearer '+key},body:build(false)},'OpenAI',onWait);else throw e}
+    const segs=data?.segments?.length?data.segments:(data?.text?[{start:0,end:part.length/16000,text:data.text}]:[]);const local={};const pieceStart=off/16000;
+    for(const s of segs){
+      const text=String(s.text||'').trim();if(!text)continue;
+      let lab=String(s.speaker??'?');let id;
+      if(!diar)id='S1';
+      else if(/^S\d+$/.test(lab)&&M.refs[lab])id=lab;
+      else{id=local[lab]||(local[lab]=nextSpeakerId());}
+      ensureSpeaker(id);
+      out.push({t:seg.start+pieceStart+(+s.start||0),sp:id,text,_s:+s.start||0,_e:+s.end||0,_part:part});
+    }
+    // 아직 목소리 샘플이 없는 화자는 이번 구간에서 2~9초 샘플을 뽑아 다음 구간의 기준으로 사용
+    if(diar)for(const id of new Set(out.filter(o=>o._part===part).map(o=>o.sp))){
+      if(M.refs[id]||Object.keys(M.refs).length>=4)continue;
+      const cand=out.filter(o=>o._part===part&&o.sp===id&&o._e-o._s>=2.5).sort((a,b)=>(b._e-b._s)-(a._e-a._s))[0];
+      if(!cand)continue;
+      const a=Math.floor(cand._s*16000),b=Math.min(part.length,Math.floor(Math.min(cand._e,cand._s+9)*16000));
+      if(b-a<2*16000)continue;
+      M.refs[id]='data:audio/wav;base64,'+await blobToB64(encodeWav(part.subarray(a,b)));
+    }
+  }
+  return out.map(({t,sp,text})=>({t,sp,text}));
+}
+
+/* ---------- 전사 실행 ---------- */
+let busy=false,againQueued=false,jobNote='';
+const hasKey=e=>!!({gemini:S.geminiKey,openai:S.openaiKey,claude:S.claudeKey}[e]||'').trim();
+// 긴 녹음도 버튼 한 번으로 끝까지 이어서 전사합니다. 내부적으로는 API 한 번에 보낼 수 있는 크기(약 5~10분) 단위로 보내지만,
+// 사용자는 하나의 작업으로 보고, 실패한 부분은 끝난 뒤 자동으로 한 번 더 시도합니다.
+async function runTranscription(opts={}){
+  if(!M||M.example)return;
+  if(busy){againQueued=true;return}
+  const engine=S.stt;
+  if(!hasKey(engine)){if(!opts.auto){try{needKey(engine)}catch(e){toast(e.message)}}return}
+  if(!M.segments.some(s=>s.status==='pending'||s.status==='error')){if(!opts.auto)toast('전사할 녹음이 없습니다.');return}
+  if(M.sttEngine&&M.sttEngine!==engine&&M.lines.length){M.lines=[];M.speakers={};M.refs={};M.segments.forEach(s=>{if(s.status!=='recording'&&s.status!=='empty')s.status='pending'})}
+  M.segments.forEach(s=>{if(s.status==='error')s.status='pending'});
+  const job=M;job.sttEngine=engine;busy=true;jobNote='';renderSegList();
+  let stop=false;
+  for(let round=0;round<2&&!stop;round++){
+    if(round===1){
+      const failed=job.segments.filter(s=>s.status==='error');if(!failed.length)break;
+      for(let i=20;i>0&&!stop;i--){jobNote=`실패한 부분을 ${i}초 뒤 자동으로 다시 시도합니다`;renderSegList();await sleep(1000)}
+      failed.forEach(s=>{s.status='pending';s.error=''});
+    }
+    let seg;
+    while(!stop&&(seg=job.segments.find(s=>s.status==='pending'))){
+      seg.status='running';seg.error='';seg.note='';jobNote='';renderSegList();
+      try{
+        const blob=await store.getAudio(job.id+':'+seg.idx);if(!blob)throw new Error('녹음 파일이 이 기기에 없습니다. 녹음한 기기에서 전사하세요.');
+        const onWait=msg=>{seg.note=msg;renderSegList()};
+        const lines=engine==='gemini'?await geminiTranscribe(blob,seg,onWait):await openaiTranscribe(blob,seg,onWait,(i,n)=>{seg.note=n>1?`${i}/${n}`:'';renderSegList()});
+        job.lines=job.lines.filter(l=>l.seg!==seg.idx).concat(lines.map((l,i)=>({...l,seg:seg.idx,id:seg.idx+'-'+i}))).sort((a,b)=>a.t-b.t);
+        seg.status='done';seg.note='';
+      }catch(e){console.error(e);seg.status='error';seg.error=e.message;
+        if(/키|401|403|404/.test(e.message))stop=true}
+      store.putMeeting(job);renderSegList();if(M===job)renderTranscript();
+    }
+  }
+  busy=false;jobNote='';renderSegList();if(M===job)renderTranscript();
+  if(againQueued){againQueued=false;if(job.segments.some(s=>s.status==='pending')){setTimeout(()=>runTranscription({auto:true}),0);return}}
+  const fails=job.segments.filter(s=>s.status==='error').length;
+  if(fails)toast(stop?'전사를 멈췄습니다. 오류 내용을 확인하세요.':`일부 부분(${fails}곳)을 전사하지 못했습니다. "실패 부분 다시 시도"를 누르세요.`,5000);
+  else if(!(R&&M===job)&&job.segments.every(s=>s.status==='done'||s.status==='empty')){toast('전사가 끝났습니다.');if(M===job)showTab('transcript')}
+}
+
+/* ---------- 요약 ---------- */
+function transcriptText(){return M.lines.map(l=>`[${fmt(l.t)}] ${spName(l.sp)}: ${l.text}`).join('\n')}
+async function callLLM(engine,prompt,onWait){
+  const key=needKey(engine);
+  if(engine==='claude'){
+    const d=await apiFetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'content-type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+      body:JSON.stringify({model:S.claudeModel.trim(),max_tokens:16000,messages:[{role:'user',content:prompt}]})},'Claude',onWait);
+    return (d.content||[]).filter(c=>c.type==='text').map(c=>c.text).join('');
+  }
+  if(engine==='openai'){
+    const d=await apiFetch('https://api.openai.com/v1/chat/completions',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+key},
+      body:JSON.stringify({model:S.openaiModel.trim(),messages:[{role:'user',content:prompt}],response_format:{type:'json_object'}})},'OpenAI',onWait);
+    return d.choices?.[0]?.message?.content||'';
+  }
+  const url=`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent((S.geminiSumModel||S.geminiModel).trim())}:generateContent`;
+  const d=await apiFetch(url,{method:'POST',headers:{'Content-Type':'application/json','x-goog-api-key':key},
+    body:JSON.stringify({contents:[{role:'user',parts:[{text:prompt}]}],generationConfig:{responseMimeType:'application/json'}})},'Gemini',onWait);
+  return geminiText(d);
+}
+async function runSummary(){
+  if(!M||busy)return;
+  if(!M.lines.length){toast('먼저 전사를 완료하세요.');return}
+  const engine=$('#sumEngineSel').value;S.sum=engine;saveSettings();
+  try{needKey(engine)}catch(e){toast(e.message);return}
+  busy=true;$('#sumBtn').disabled=true;const st=$('#sumState');st.textContent=`${ENGINE_NAMES[engine]}가 회의 내용을 정리하는 중… (긴 회의는 1~2분)`;
+  const lang=S.sumLang==='en'?'영어':S.sumLang==='same'?'회의에서 주로 쓰인 언어':'한국어';
+  const prompt=`다음은 회의 전사 기록입니다. 각 줄은 [시각] 화자: 발언 형식입니다.
+회의 제목: ${M.title}
+회의 길이: ${fmt(M.duration)}
+참석 화자: ${Object.values(M.speakers).join(', ')}
+
+아래 지시에 따라 ${lang}로 정리하세요.
+1. title: 회의 내용을 드러내는 짧은 제목.
+2. overview: 회의 목적, 핵심 논의, 결론을 3~5문장으로.
+3. themes: 논의를 3~8개 테마로 묶고, 테마마다 핵심 내용 2~6개를 구체적으로(수치, 이름, 근거, 서로 다른 의견 포함). refs에는 관련 발언 시각(HH:MM:SS) 1~3개.
+4. decisions: 회의에서 합의되거나 결정된 사항.
+5. action_items: 해야 할 일. task는 동사로 끝나는 구체적 문장, owner는 전사에서 확인되는 담당 화자 이름(불명확하면 "미정"), due는 언급된 기한(없으면 "미정"), priority는 "높음"/"중간"/"낮음", ref는 근거 발언 시각.
+6. open_questions: 결론이 나지 않은 쟁점이나 추가 확인이 필요한 사항.
+전사에 없는 내용은 만들지 마세요. 해당 항목이 없으면 빈 배열로 두세요.
+
+JSON 객체 하나만 출력:
+{"title":"","overview":"","themes":[{"title":"","points":[""],"refs":["00:00:00"]}],"decisions":[""],"action_items":[{"task":"","owner":"","due":"","priority":"중간","ref":"00:00:00"}],"open_questions":[""]}
+
+--- 전사 시작 ---
+${transcriptText()}
+--- 전사 끝 ---`;
+  try{
+    const txt=await callLLM(engine,prompt,msg=>st.textContent=`${ENGINE_NAMES[engine]} 응답 대기 중 · ${msg}`);
+    const sum=parseJSONLoose(txt,'object');
+    M.summary={...sum,engine,at:Date.now()};M.doneTasks={};save();st.textContent='';renderSummary();$('#sumBox').open=true;toast('요약을 만들었습니다.');
+  }catch(e){console.error(e);st.textContent=e.message}
+  busy=false;$('#sumBtn').disabled=false;
+}
+
+/* ---------- 재생 ---------- */
+const urlCache=new Map();let playSeg=-1;
+async function segUrl(idx){const k=M.id+':'+idx;if(urlCache.has(k))return urlCache.get(k);const b=await store.getAudio(k);if(!b)return null;const u=URL.createObjectURL(b);urlCache.set(k,u);return u}
+async function playAt(t){
+  if(!M||M.example){toast('예시 회의에는 녹음이 없습니다.');return}
+  showTab('transcript');
+  const seg=[...M.segments].reverse().find(s=>t>=s.start-0.5)||M.segments[0];if(!seg)return;
+  const u=await segUrl(seg.idx);if(!u){toast('녹음 파일은 녹음한 기기에만 있어 여기서는 재생할 수 없습니다.');return}
+  const a=$('#player');const off=Math.max(0,t-seg.start-1);
+  if(playSeg!==seg.idx){a.src=u;playSeg=seg.idx;await new Promise(r=>{a.onloadedmetadata=r;setTimeout(r,1500)})}
+  try{a.currentTime=off}catch(e){}
+  a.play().catch(()=>{});
+}
+function initPlayer(){
+  const a=$('#player');
+  a.addEventListener('ended',async()=>{const next=M?.segments.find(s=>s.idx===playSeg+1);if(next){const u=await segUrl(next.idx);if(u){a.src=u;playSeg=next.idx;a.play().catch(()=>{})}}});
+  a.addEventListener('timeupdate',()=>{
+    if(!M||playSeg<0)return;const seg=M.segments.find(s=>s.idx===playSeg);if(!seg)return;const t=seg.start+a.currentTime;
+    let cur=null;for(const l of M.lines){if(l.t<=t+0.3)cur=l;else break}
+    const id=cur?cur.id:null;if(id===initPlayer._last)return;initPlayer._last=id;
+    $$('.ln.playing').forEach(e=>e.classList.remove('playing'));if(id)$(`.ln[data-id="${CSS.escape(id)}"]`)?.classList.add('playing');
+  });
+}
+
+/* ---------- 내보내기 ---------- */
+function summaryMd(){
+  const s=M.summary;if(!s)return '';const o=[];
+  o.push('## 요약',s.overview||'','');
+  (s.themes||[]).forEach(t=>{o.push(`### ${t.title}`);(t.points||[]).forEach(p=>o.push(`- ${p}`));if(t.refs?.length)o.push(`  (관련 시점: ${t.refs.join(', ')})`);o.push('')});
+  if(s.decisions?.length){o.push('## 결정 사항');s.decisions.forEach(d=>o.push(`- ${d}`));o.push('')}
+  if(s.action_items?.length){o.push('## 액션 아이템','| 할 일 | 담당 | 기한 | 우선순위 |','|---|---|---|---|');s.action_items.forEach(a=>o.push(`| ${a.task} | ${a.owner||'미정'} | ${a.due||'미정'} | ${a.priority||''} |`));o.push('')}
+  if(s.open_questions?.length){o.push('## 남은 쟁점');s.open_questions.forEach(q=>o.push(`- ${q}`));o.push('')}
+  return o.join('\n');
+}
+function header(){return `# ${M.title}\n\n- 일시: ${new Date(M.createdAt).toLocaleString('ko-KR')}\n- 길이: ${fmt(M.duration)}\n- 참석 화자: ${Object.values(M.speakers).join(', ')}\n`}
+function exportAs(kind){
+  if(!M)return;const base=(M.title||'회의록').replace(/[\\/:*?"<>|]/g,'_');
+  let body,type,ext;
+  if(kind==='md'){body=header()+'\n'+summaryMd()+'\n## 전체 기록\n\n'+M.lines.map(l=>`**[${fmt(l.t)}] ${spName(l.sp)}**: ${l.text}  `).join('\n');type='text/markdown';ext='md'}
+  else if(kind==='txt'){body=`${M.title}\n${new Date(M.createdAt).toLocaleString('ko-KR')} · ${fmt(M.duration)}\n\n`+(M.summary?summaryMd().replace(/^#+ /gm,'■ ')+'\n':'')+'■ 전체 기록\n'+transcriptText();type='text/plain';ext='txt'}
+  else{
+    const s=M.summary;let h=`<h1>${esc(M.title)}</h1><p>${esc(new Date(M.createdAt).toLocaleString('ko-KR'))} · ${fmt(M.duration)} · 참석: ${esc(Object.values(M.speakers).join(', '))}</p>`;
+    if(s){h+=`<h2>요약</h2><p>${esc(s.overview)}</p>`;(s.themes||[]).forEach(t=>{h+=`<h3>${esc(t.title)}</h3><ul>${(t.points||[]).map(p=>`<li>${esc(p)}</li>`).join('')}</ul>`});
+      if(s.decisions?.length)h+=`<h2>결정 사항</h2><ul>${s.decisions.map(d=>`<li>${esc(d)}</li>`).join('')}</ul>`;
+      if(s.action_items?.length)h+=`<h2>액션 아이템</h2><table border="1" cellpadding="6" style="border-collapse:collapse"><tr><th>할 일</th><th>담당</th><th>기한</th><th>우선순위</th></tr>${s.action_items.map(a=>`<tr><td>${esc(a.task)}</td><td>${esc(a.owner||'미정')}</td><td>${esc(a.due||'미정')}</td><td>${esc(a.priority||'')}</td></tr>`).join('')}</table>`;
+      if(s.open_questions?.length)h+=`<h2>남은 쟁점</h2><ul>${s.open_questions.map(q=>`<li>${esc(q)}</li>`).join('')}</ul>`}
+    h+=`<h2>전체 기록</h2>`+M.lines.map(l=>`<p><b>[${fmt(l.t)}] ${esc(spName(l.sp))}</b>: ${esc(l.text)}</p>`).join('');
+    body=`<html><head><meta charset="utf-8"><title>${esc(M.title)}</title></head><body style="font-family:'Malgun Gothic',sans-serif">${h}</body></html>`;type='application/msword';ext='doc';
+  }
+  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob(['﻿'+body],{type:type+';charset=utf-8'}));a.download=`${base}.${ext}`;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},2000);
+}
+
+/* ---------- 렌더링 ---------- */
+function showTab(name){$$('nav.tabs button').forEach(b=>b.setAttribute('aria-selected',String(b.dataset.tab===name)));$$('section.tab').forEach(s=>s.hidden=s.id!=='tab-'+name);if(name==='home')renderHome();if(name==='settings')renderModels();window.scrollTo({top:0})}
+function renderAll(){renderRecord();renderSegList();renderTranscript();renderSummary()}
+function renderRecord(){
+  const live=!!R;$('#liveDot').classList.toggle('live',live&&!R.paused);
+  const rb=$('#recBtn');rb.classList.toggle('on',live);rb.setAttribute('aria-label',live?'녹음 종료':'녹음 시작');rb.disabled=busy&&!live;
+  $('#pauseBtn').disabled=!live;$('#pauseBtn').textContent=live&&R.paused?'이어서 녹음':'일시정지';
+  $('#fileBtn').disabled=live||busy;$('#mTitle').disabled=live;
+  if(!live){$('#clock').firstChild.nodeValue=fmt(M&&!M.example?M.duration:0);if(!busy&&!M)$('#recState').textContent='녹음 버튼을 누르면 시작합니다.';else if(M&&!M.example&&M.segments.length&&!busy)$('#recState').textContent=`저장된 녹음 · ${fmt(M.duration)}`}
+  const pp=$('#procPanel');const has=M&&!M.example&&M.segments.length;pp.hidden=!has;
+  $('#autoStt').checked=!!S.autoStt;
+  if(has){
+    const segs=M.segments.filter(s=>s.status!=='empty');
+    const total=live?Math.max(elapsed(),1):Math.max(1,segs.reduce((a,s)=>a+s.dur,0));
+    const doneDur=segs.filter(s=>s.status==='done').reduce((a,s)=>a+s.dur,0);
+    const fails=segs.filter(s=>s.status==='error').length;
+    const allDone=!live&&segs.length&&segs.every(s=>s.status==='done');
+    $('#procBar').style.width=Math.min(100,doneDur/total*100)+'%';
+    $('#procTitle').textContent=live?(busy?'녹음과 함께 전사 중':S.autoStt?'녹음 중 · 10분마다 자동 전사':'녹음 중')
+      :busy?'전사 중':allDone?'전사 완료':fails?'일부 전사 실패':doneDur?'전사 일부 완료':'전사 준비 완료';
+    $('#procSub').textContent=`전체 ${fmt(total)} 중 ${fmt(doneDur)} 전사 · ${ENGINE_NAMES[S.stt]} · ${LANG_NAMES[S.lang]} (설정에서 변경)`;
+    const b=$('#sttBtn');b.disabled=busy||allDone||(live&&!segs.some(s=>s.status==='pending'||s.status==='error'));
+    b.textContent=busy?'전사 중…':allDone?'완료됨':fails?'실패 부분 다시 시도':doneDur?'이어서 전사':'전사 시작';
+  }
+}
+function renderSegList(){
+  const ul=$('#segList'),js=$('#jobState');if(!M||M.example){ul.innerHTML='';js.textContent='';renderRecord();return}
+  const run=M.segments.find(s=>s.status==='running');
+  js.textContent=jobNote||(run?`${fmt(run.start)} 부근을 전사하는 중${run.note?` · ${run.note}`:''}`:'');
+  ul.innerHTML=M.segments.filter(s=>s.status==='error').map(s=>`<li><span class="t">${fmt(s.start)} – ${fmt(s.start+s.dur)}</span><span class="pill err">실패</span><span class="msg">${esc(s.error||'')}</span></li>`).join('');
+  renderRecord();
+}
+function renderTranscript(){
+  const has=M&&M.lines.length;$('#trEmpty').hidden=!!has;$('#trBody').hidden=!has;if(!has)return;
+  $('#trTitle').innerHTML=esc(M.title)+(M.example?' <span class="example-tag">예시</span>':'');
+  $('#trMeta').textContent=`${new Date(M.createdAt).toLocaleString('ko-KR')} · ${fmt(M.duration)} · 화자 ${Object.keys(M.speakers).length}명 · ${M.lines.length}개 발언`+(M.sttEngine?` · ${ENGINE_NAMES[M.sttEngine]} 전사`:'');
+  $('#playerBox').hidden=!!M.example;
+  const ids=Object.keys(M.speakers);
+  $('#spList').innerHTML=ids.map(id=>`<div class="sprow"><span class="swatch" style="background:${spColor(id)}"></span>
+    <input type="text" id="spn-${id}" data-sp="${id}" value="${esc(M.speakers[id])}" aria-label="${id} 이름">
+    <select data-merge="${id}" style="width:auto" aria-label="합치기"><option value="">합치기…</option>${ids.filter(x=>x!==id).map(x=>`<option value="${x}">→ ${esc(M.speakers[x])}</option>`).join('')}</select></div>`).join('');
+  const opts=ids.map(id=>`<option value="${id}">${esc(M.speakers[id])}</option>`).join('');
+  $('#lines').innerHTML=M.lines.map(l=>`<div class="ln" data-id="${esc(l.id)}"><button class="ts" data-t="${l.t}" title="이 시점부터 듣기">${fmt(l.t)}</button>
+    <div class="body"><select class="who" data-line="${esc(l.id)}" style="color:${spColor(l.sp)}" aria-label="화자">${opts.replace(`value="${l.sp}"`,`value="${l.sp}" selected`)}</select>
+    <div class="tx" contenteditable="${M.example?'false':'true'}" spellcheck="false" data-edit="${esc(l.id)}">${esc(l.text)}</div></div></div>`).join('');
+}
+function renderSummary(){
+  const sel=$('#sumEngineSel');sel.value=S.sum;
+  $('#sumEngineNote').textContent=M?.summary?`${ENGINE_NAMES[M.summary.engine]||''} · ${new Date(M.summary.at||Date.now()).toLocaleString('ko-KR')}`:M&&M.lines.length?`${M.lines.length}개 발언 기준`:'';
+  $('#sumBtn').disabled=!(M&&M.lines.length)||busy||M?.example;
+  const out=$('#sumOut');const s=M?.summary;
+  if(!s){out.innerHTML=M&&M.lines.length?'<p class="small muted" style="margin:0">요약 엔진을 고르고 "요약 만들기"를 누르면 테마별 정리와 액션 아이템이 여기에 나타납니다.</p>':'';return}
+  const ref=r=>`<button class="ref" data-t="${parseTime(r)}">${esc(r)}</button>`;
+  const prioCls=p=>/높/.test(p)?'h':/낮/.test(p)?'l':'m';
+  out.innerHTML=`<div style="display:flex;flex-direction:column;gap:22px">
+  <div class="sum-head">${M.example?'<span class="example-tag">예시</span>':''}<h2>${esc(s.title||M.title)}</h2></div>
+  <p class="overview" style="margin:0">${esc(s.overview)}</p>
+  ${(s.themes||[]).length?`<div><div class="label" style="margin-bottom:8px">테마별 정리</div><div class="themes">${s.themes.map(t=>`<div class="theme"><h3>${esc(t.title)}</h3><ul>${(t.points||[]).map(p=>`<li>${esc(p)}</li>`).join('')}</ul>${t.refs?.length?`<div class="refs">${t.refs.map(ref).join('')}</div>`:''}</div>`).join('')}</div></div>`:''}
+  ${(s.decisions||[]).length?`<div class="plain"><div class="label" style="margin-bottom:6px">결정 사항</div><ul>${s.decisions.map(d=>`<li>${esc(d)}</li>`).join('')}</ul></div>`:''}
+  <div><div class="label" style="margin-bottom:8px">액션 아이템 · ${(s.action_items||[]).length}건</div>
+  ${(s.action_items||[]).length?`<div class="tablewrap"><table><thead><tr><th style="width:36px">완료</th><th>할 일</th><th>담당</th><th>기한</th><th>우선순위</th><th>근거</th></tr></thead><tbody>
+  ${s.action_items.map((a,i)=>`<tr class="${M.doneTasks?.[i]?'done':''}"><td><input type="checkbox" id="task-${i}" data-task="${i}" ${M.doneTasks?.[i]?'checked':''} aria-label="완료"></td><td class="task">${esc(a.task)}</td><td>${esc(a.owner||'미정')}</td><td>${esc(a.due||'미정')}</td><td><span class="prio ${prioCls(a.priority||'')}">${esc(a.priority||'중간')}</span></td><td>${a.ref?ref(a.ref):''}</td></tr>`).join('')}
+  </tbody></table></div>`:'<p class="muted small">확인된 실행 항목이 없습니다.</p>'}</div>
+  ${(s.open_questions||[]).length?`<div class="plain"><div class="label" style="margin-bottom:6px">남은 쟁점</div><ul>${s.open_questions.map(q=>`<li>${esc(q)}</li>`).join('')}</ul></div>`:''}
+  </div>`;
+}
+let pendingDel=null;
+function meetingInFolder(m,f){return f==='all'||(f==='none'?!folderExists(m.folder):m.folder===f)}
+async function renderHome(){
+  const all=(await store.allMeetings()).sort((a,b)=>b.createdAt-a.createdAt);
+  if(curFolder!=='all'&&curFolder!=='none'&&!folderExists(curFolder))curFolder='all';
+  const cnt=f=>all.filter(m=>meetingInFolder(m,f)).length;
+  const chip=(id,name)=>`<button class="chip" data-folder="${id}" aria-pressed="${curFolder===id}">${esc(name)}<span class="n">${cnt(id)}</span></button>`;
+  $('#folderBar').innerHTML=chip('all','전체')+folders.map(f=>chip(f.id,f.name)).join('')+(folders.length?chip('none','미분류'):'')+`<button class="chip add" data-ftool="new">+ 새 폴더</button>`;
+  const tools=$('#folderTools');
+  if(folderMode==='new'||folderMode==='rename'){
+    tools.innerHTML=`<input type="text" id="folderName" class="grow" style="flex:1 1 180px" placeholder="폴더 이름 (예: 센서 과제)" value="${folderMode==='rename'?esc(folderName(curFolder)):''}">
+      <button class="btn sm primary" data-ftool="save">${folderMode==='new'?'만들기':'저장'}</button><button class="btn sm ghost" data-ftool="cancel">취소</button>`;
+    setTimeout(()=>$('#folderName')?.focus(),0);
+  }else if(folderExists(curFolder)){
+    tools.innerHTML=`<span class="small muted" style="flex:1 1 100px;min-width:0">${esc(folderName(curFolder))} 폴더</span><span class="row" style="gap:6px"><button class="btn sm" data-ftool="rename">이름 바꾸기</button>`+
+      (folderMode==='delete'?`<button class="btn sm danger" data-ftool="confirmDel">삭제 확인</button><button class="btn sm ghost" data-ftool="cancel">취소</button>`:`<button class="btn sm danger" data-ftool="delete">폴더 삭제</button>`)+`</span>`;
+  }else tools.innerHTML='';
+  tools.hidden=!tools.innerHTML;
+  const q=$('#search').value.trim().toLowerCase();
+  const list=all.filter(m=>meetingInFolder(m,curFolder)&&(!q||m.title.toLowerCase().includes(q)));
+  const el=$('#mlist');
+  if(!list.length){el.innerHTML=`<div class="empty"><div>${all.length?(q?'검색 결과가 없습니다.':'이 폴더에 회의가 없습니다.'):'저장된 회의가 없습니다.'}</div><div class="small">${all.length?'회의 항목의 폴더 선택으로 옮기거나 "새 회의 녹음"을 누르세요.':'"새 회의 녹음"으로 시작하거나 "예시 회의 열기"로 결과 화면을 먼저 볼 수 있습니다.'}</div></div>`;return}
+  el.innerHTML=list.map(m=>{const done=m.segments.filter(s=>s.status==='done').length;
+    const st=!m.segments.length?'<span class="pill">비어 있음</span>':done===m.segments.length?'<span class="pill ok">전사 완료</span>':`<span class="pill warn">전사 ${done}/${m.segments.length}</span>`;
+    return `<div class="mitem"><div class="info"><b>${esc(m.title)}</b><span class="small muted">${new Date(m.createdAt).toLocaleString('ko-KR')} · ${fmt(m.duration)}</span></div>
+    ${st}${m.summary?'<span class="pill ok">요약</span>':''}
+    <select data-mfolder="${m.id}" aria-label="폴더 이동">${folderOptions(folderExists(m.folder)?m.folder:'')}</select>
+    <button class="btn sm" data-open="${m.id}">열기</button><button class="btn sm danger" data-del="${m.id}">${pendingDel===m.id?'정말 삭제':'삭제'}</button></div>`}).join('');
+}
+async function folderAction(act){
+  if(act==='new'){folderMode='new'}
+  else if(act==='rename'){folderMode='rename'}
+  else if(act==='delete'){folderMode='delete'}
+  else if(act==='cancel'){folderMode=null}
+  else if(act==='save'){
+    const name=$('#folderName').value.trim();if(!name){toast('폴더 이름을 입력하세요.');return}
+    if(folderMode==='new'){const f={id:'f'+Date.now().toString(36),name};folders.push(f);curFolder=f.id;toast(`"${name}" 폴더를 만들었습니다.`)}
+    else{const f=folders.find(x=>x.id===curFolder);if(f)f.name=name}
+    folderMode=null;
+  }else if(act==='confirmDel'){
+    const id=curFolder;for(const m of await store.allMeetings()){if(m.folder===id){m.folder='';await store.putMeeting(m)}}
+    if(M&&M.folder===id)M.folder='';
+    folders=folders.filter(f=>f.id!==id);curFolder='all';folderMode=null;toast('폴더를 삭제했습니다. 안의 회의는 미분류로 옮겼습니다.');
+  }
+  saveFolders();syncFolderSelect();renderHome();
+}
+
+/* ---------- 예시 ---------- */
+function sampleMeeting(){
+  const m=newMeeting('신규 센서 과제 주간 회의','example');m.example=true;m.duration=1847;m.sttEngine='gemini';
+  m.speakers={S1:'김연구',S2:'박책임',S3:'이선임'};
+  const L=[[4,'S2','시작하겠습니다. 오늘은 시제품 테스트 결과랑 다음 달 중간보고 일정 두 가지 보면 될 것 같아요.'],[19,'S1','테스트는 지난주 금요일에 끝났고요, 측정 오차가 목표 2% 대비 3.4%로 나왔습니다.'],[41,'S2','원인은 파악됐어요?'],[47,'S1','온도 보정 쪽이 문제로 보입니다. 섭씨 30도 넘어가면 오차가 급격히 커져요.'],[66,'S3','보정 알고리즘은 제가 이번 주 안에 다시 돌려볼 수 있습니다. 데이터만 공유해 주시면 돼요.'],[88,'S2','좋습니다. 그럼 이 선임님이 금요일까지 보정 재실험하는 걸로 하죠.'],[412,'S2','중간보고는 11월 12일로 확정됐습니다. 발표 자료는 일주일 전까지 초안이 필요해요.'],[431,'S1','장비 사진이랑 테스트 그래프는 제가 정리하겠습니다.'],[455,'S3','예산 집행률 질문이 나올 텐데, 그건 행정팀 확인이 필요할 것 같습니다.'],[478,'S2','그건 제가 행정팀에 물어볼게요. 다른 안건 없으면 여기서 마치겠습니다.']];
+  m.lines=L.map((x,i)=>({id:'0-'+i,seg:0,t:x[0],sp:x[1],text:x[2]}));
+  m.summary={engine:'claude',at:Date.now(),title:'시제품 오차 원인과 중간보고 준비',overview:'시제품 테스트에서 측정 오차가 목표(2%)를 넘는 3.4%로 확인되었고, 원인은 30℃ 이상 구간의 온도 보정으로 좁혀졌다. 보정 알고리즘을 이번 주 안에 재실험하기로 했다. 중간보고는 11월 12일로 확정되어 일주일 전까지 발표 초안을 준비한다.',
+    themes:[{title:'시제품 테스트 결과',points:['측정 오차 3.4%, 목표 2% 미달','30℃ 이상에서 오차 급증, 온도 보정이 원인으로 추정'],refs:['00:00:19','00:00:47']},{title:'중간보고 준비',points:['일정 11월 12일 확정','발표 초안은 1주일 전까지 필요','장비 사진·테스트 그래프 포함'],refs:['00:06:52']},{title:'예산 집행',points:['집행률 질의 예상, 행정팀 확인 필요'],refs:['00:07:35']}],
+    decisions:['온도 보정 알고리즘을 재실험한다','중간보고 일정은 11월 12일로 한다'],
+    action_items:[{task:'온도 보정 알고리즘 재실험을 진행한다',owner:'이선임',due:'이번 주 금요일',priority:'높음',ref:'00:01:28'},{task:'테스트 원본 데이터를 이선임에게 공유한다',owner:'김연구',due:'미정',priority:'높음',ref:'00:01:06'},{task:'장비 사진과 테스트 그래프를 정리한다',owner:'김연구',due:'11월 5일',priority:'중간',ref:'00:07:11'},{task:'예산 집행률을 행정팀에 확인한다',owner:'박책임',due:'미정',priority:'중간',ref:'00:07:58'}],
+    open_questions:['보정 후에도 목표 오차 2%를 맞추지 못할 경우의 대안']};
+  return m;
+}
+
+/* ---------- 이벤트 ---------- */
+$$('nav.tabs button').forEach(b=>b.addEventListener('click',()=>showTab(b.dataset.tab)));
+$('#recBtn').addEventListener('click',()=>R?stopRecording():startRecording());
+$('#pauseBtn').addEventListener('click',togglePause);
+$('#fileBtn').addEventListener('click',()=>$('#fileIn').click());
+$('#fileIn').addEventListener('change',e=>{const f=e.target.files[0];e.target.value='';if(f)importFile(f)});
+$('#sttBtn').addEventListener('click',()=>runTranscription());
+$('#autoStt').addEventListener('change',e=>{S.autoStt=e.target.checked;saveSettings();if(S.autoStt&&M&&!busy)runTranscription({auto:true})});
+$('#sumBtn').addEventListener('click',runSummary);
+$('#sumEngineSel').addEventListener('change',e=>{S.sum=e.target.value;saveSettings();syncSettingsUI()});
+$('#copyTr').addEventListener('click',async()=>{const txt=header()+'\n'+(M.summary?summaryMd()+'\n':'')+transcriptText();try{await navigator.clipboard.writeText(txt);toast('복사했습니다.')}catch(e){toast('복사 권한이 없어 Markdown 내보내기를 이용하세요.')}});
+$('#sampleBtn').addEventListener('click',()=>{if(R||busy){toast(R?'녹음 중입니다.':'전사가 끝난 뒤 열 수 있습니다.');return}setCurrent(sampleMeeting());showTab('transcript')});
+$('#newRecBtn').addEventListener('click',()=>{if(R){showTab('record');return}if(busy){toast('전사가 끝난 뒤 새 회의를 시작하세요.');return}playSeg=-1;$('#player').removeAttribute('src');setCurrent(null);$('#mTitle').value='';syncFolderSelect();showTab('record')});
+$('#search').addEventListener('input',()=>renderHome());
+$('#mFolder').addEventListener('change',e=>{if(M&&!M.example){M.folder=e.target.value;save()}});
+document.addEventListener('keydown',e=>{if(e.target.id==='folderName'){if(e.key==='Enter')folderAction('save');if(e.key==='Escape')folderAction('cancel')}});
+document.addEventListener('click',e=>{
+  const fc=e.target.closest('[data-folder]');if(fc){curFolder=fc.dataset.folder;folderMode=null;saveFolders(false);syncFolderSelect();renderHome();return}
+  const ft=e.target.closest('[data-ftool]');if(ft){folderAction(ft.dataset.ftool);return}
+  const ex=e.target.closest('[data-export]');if(ex&&M){exportAs(ex.dataset.export);return}
+  const ts=e.target.closest('[data-t]');if(ts){playAt(+ts.dataset.t);return}
+  const op=e.target.closest('[data-open]');if(op){if(R){toast('녹음 중에는 다른 회의를 열 수 없습니다.');return}if(busy&&op.dataset.open!==M?.id){toast('전사가 끝난 뒤 다른 회의를 열 수 있습니다.');return}store.getMeeting(op.dataset.open).then(m=>{if(m){playSeg=-1;$('#player').removeAttribute('src');setCurrent(m);showTab(m.lines.length?'transcript':'record')}});return}
+  const dl=e.target.closest('[data-del]');if(dl){const id=dl.dataset.del;if(pendingDel!==id){pendingDel=id;renderHome();setTimeout(()=>{if(pendingDel===id){pendingDel=null;renderHome()}},4000);return}
+    pendingDel=null;store.getMeeting(id).then(async m=>{if(m)await store.del(m);if(M?.id===id)setCurrent(null);renderHome();toast('삭제했습니다.')});return}
+  const rv=e.target.closest('[data-reveal]');if(rv){const i=$('#'+rv.dataset.reveal);i.type=i.type==='password'?'text':'password';rv.textContent=i.type==='password'?'보기':'숨기기'}
+});
+document.addEventListener('change',e=>{
+  const t=e.target;
+  if(t.matches('[data-mfolder]')){store.getMeeting(t.dataset.mfolder).then(async m=>{if(!m)return;m.folder=t.value;if(M?.id===m.id){M.folder=t.value;syncFolderSelect()}await store.putMeeting(m);renderHome();toast(`${folderName(t.value)}(으)로 옮겼습니다.`)});return}
+  if(t.matches('select.who')){const l=M.lines.find(x=>x.id===t.dataset.line);if(l){l.sp=t.value;save();renderTranscript()}}
+  else if(t.matches('[data-merge]')&&t.value){const from=t.dataset.merge,to=t.value;M.lines.forEach(l=>{if(l.sp===from)l.sp=to});delete M.speakers[from];delete M.refs[from];save();renderTranscript();toast('화자를 합쳤습니다.')}
+  else if(t.matches('[data-task]')){M.doneTasks=M.doneTasks||{};M.doneTasks[t.dataset.task]=t.checked;t.closest('tr').classList.toggle('done',t.checked);save()}
+});
+document.addEventListener('input',e=>{const t=e.target;if(t.matches('[data-sp]')){M.speakers[t.dataset.sp]=t.value||t.dataset.sp;save();
+  $$('select.who option[value="'+t.dataset.sp+'"], [data-merge] option[value="'+t.dataset.sp+'"]').forEach(o=>o.textContent=o.closest('[data-merge]')?'→ '+t.value:t.value)}});
+document.addEventListener('focusout',e=>{const t=e.target;if(t.matches?.('[data-edit]')&&M){const l=M.lines.find(x=>x.id===t.dataset.edit);const v=t.textContent.trim();if(l&&v!==l.text){l.text=v;save()}}});
+$('#mTitle').addEventListener('change',e=>{if(M&&!M.example&&!R){M.title=e.target.value.trim()||M.title;$('#curTitle').textContent=M.title;save()}});
+window.addEventListener('beforeunload',e=>{if(R||busy){e.preventDefault();e.returnValue=''}});
+
+/* 설정 UI */
+function renderKeyState(){
+  const mask=k=>k?'…'+k.slice(-4):'';
+  const parts=[['Gemini',S.geminiKey],['OpenAI',S.openaiKey],['Claude',S.claudeKey]].map(([n,k])=>k?`<span class="pill ok">${n} 저장됨 ${esc(mask(k))}</span>`:`<span class="pill">${n} 없음</span>`);
+  const persisted=!!lsGet(LK('settings'),null);
+  $('#keyState').innerHTML=parts.join(' ')+(persisted?'':' <span class="pill err">브라우저 저장소를 쓸 수 없어 창을 닫으면 지워집니다</span>');
+}
+function saveKeys(){
+  for(const k of ['geminiKey','openaiKey','claudeKey'])S[k]=$('#'+k).value.trim();
+  saveSettings();
+  const v=lsGet(LK('settings'),{});const ok=v.geminiKey===S.geminiKey&&v.openaiKey===S.openaiKey&&v.claudeKey===S.claudeKey;
+  renderKeyState();toast(ok?'API 키를 저장했습니다.':'이 브라우저에서는 저장되지 않았습니다. 이번 창에서만 사용됩니다.');
+}
+function syncSettingsUI(){
+  $$('input[name=stt]').forEach(r=>r.checked=r.value===S.stt);$$('input[name=sum]').forEach(r=>r.checked=r.value===S.sum);
+  for(const k of ['geminiKey','openaiKey','claudeKey','lang','sumLang','nSpk'])$('#'+k).value=S[k]??'';
+  $('#sumEngineSel').value=S.sum;renderKeyState();
+}
+$$('input[name=stt]').forEach(r=>r.addEventListener('change',()=>{S.stt=r.value;saveSettings();renderRecord()}));
+$$('input[name=sum]').forEach(r=>r.addEventListener('change',()=>{S.sum=r.value;saveSettings();renderSummary()}));
+for(const k of ['lang','sumLang','nSpk'])
+  $('#'+k).addEventListener('change',e=>{S[k]=e.target.value.trim();saveSettings();syncSettingsUI();renderRecord()});
+$('#saveKeys').addEventListener('click',saveKeys);
+for(const k of ['geminiKey','openaiKey','claudeKey'])$('#'+k).addEventListener('keydown',e=>{if(e.key==='Enter')saveKeys()});
+$('#resetModels').addEventListener('click',()=>{Object.assign(S,MODEL_DEFAULTS);saveSettings();renderModels();toast('기본 모델로 되돌렸습니다.')});
+
+
+/* ---------- 모델 선택 · 점검 ---------- */
+const MODEL_FIELDS={
+  geminiModel:{prov:'gemini',kind:'stt'},geminiSumModel:{prov:'gemini',kind:'llm'},
+  openaiSttModel:{prov:'openai',kind:'stt'},openaiModel:{prov:'openai',kind:'llm'},claudeModel:{prov:'claude',kind:'llm'}};
+const FALLBACK={
+  geminiModel:['gemini-3.6-flash','gemini-3.5-flash-lite','gemini-2.5-flash','gemini-2.5-pro','gemini-flash-latest'],
+  openaiSttModel:['gpt-4o-transcribe-diarize','gpt-transcribe','gpt-4o-transcribe','gpt-4o-mini-transcribe','whisper-1'],
+  openaiModel:['gpt-5.5','gpt-5.4','gpt-5.4-mini','gpt-5-mini'],
+  claudeModel:['claude-sonnet-5-5','claude-opus-5-5','claude-haiku-5-5']};
+FALLBACK.geminiSumModel=FALLBACK.geminiModel;
+let modelLists={},checks={};
+modelLists=lsGet(LK('models'),{});checks=lsGet(LK('checks'),{});
+const saveModelState=()=>{lsSet(LK('models'),modelLists);lsSet(LK('checks'),checks)};
+const keyOf=p=>({gemini:S.geminiKey,openai:S.openaiKey,claude:S.claudeKey}[p]||'').trim();
+function modelLabel(f,id){if(f==='openaiSttModel')return id+(/diarize/.test(id)?' · 화자 구분':' · 화자 구분 없음');return id}
+function renderModels(){
+  for(const f of Object.keys(MODEL_FIELDS)){
+    const sel=$('#sel-'+f);if(!sel)continue;
+    const listed=modelLists[f]?.ids?.length?modelLists[f].ids:FALLBACK[f];
+    const ids=[...new Set(listed)];const cur=S[f]||MODEL_DEFAULTS[f];if(!ids.includes(cur))ids.unshift(cur);
+    sel.innerHTML=ids.map(id=>`<option value="${esc(id)}">${esc(modelLabel(f,id))}</option>`).join('')+'<option value="__custom">직접 입력…</option>';
+    sel.value=cur;
+    $('#src-'+f).textContent=modelLists[f]?.ids?.length?`불러온 목록 ${modelLists[f].ids.length}개`:'기본 목록';
+    const c=checks[f];const res=$('#res-'+f);
+    if(c&&c.model===cur){
+      const pill=c.state==='run'?'<span class="pill run">점검 중</span>':c.ok?'<span class="pill ok">사용 가능</span>':c.ok===null?'<span class="pill warn">키 없음</span>':'<span class="pill err">사용 불가</span>';
+      res.innerHTML=pill+(c.ms?`<span class="small muted">${(c.ms/1000).toFixed(1)}초</span>`:'')+`<span class="msg">${esc(c.msg||'')}</span>`;
+    }else res.innerHTML=`<span class="pill">미점검</span><span class="msg">${MODEL_FIELDS[f].kind==='stt'?'오디오를 받아쓸 수 있는지 확인합니다.':'요약 요청에 응답하는지 확인합니다.'}</span>`;
+  }
+  $('#voiceRow').hidden=testSrc()!=='voice';
+}
+async function fetchModelLists(){
+  const st=$('#modelState'),btn=$('#fetchModels');btn.disabled=true;st.textContent='모델 목록을 불러오는 중…';
+  const done=[],fails=[];
+  if(keyOf('gemini')){try{
+    const d=await apiFetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=1000',{headers:{'x-goog-api-key':keyOf('gemini')}},'Gemini');
+    const ids=(d.models||[]).filter(m=>(m.supportedGenerationMethods||[]).includes('generateContent')).map(m=>m.name.replace(/^models\//,''))
+      .filter(id=>/^gemini/.test(id)&&!/embed|image|imagen|tts|live|native-audio|robotics|computer-use|aqa|veo/.test(id)).sort((a,b)=>b.localeCompare(a,undefined,{numeric:true}));
+    modelLists.geminiModel={ids,at:Date.now()};modelLists.geminiSumModel={ids,at:Date.now()};done.push(`Gemini ${ids.length}개`)}catch(e){fails.push(e.message)}}
+  if(keyOf('openai')){try{
+    const d=await apiFetch('https://api.openai.com/v1/models',{headers:{Authorization:'Bearer '+keyOf('openai')}},'OpenAI');
+    const all=(d.data||[]).map(x=>x.id).sort((a,b)=>b.localeCompare(a,undefined,{numeric:true}));
+    const stt=all.filter(id=>/transcribe|whisper/.test(id)&&!/realtime|live/.test(id)).sort((a,b)=>(/diarize/.test(b)?1:0)-(/diarize/.test(a)?1:0));
+    const llm=all.filter(id=>/^(gpt-|o\d|chatgpt-)/.test(id)&&!/audio|tts|transcribe|realtime|image|embed|search|instruct|moderation|codex|live|dall|computer|sora|vision/.test(id));
+    modelLists.openaiSttModel={ids:stt,at:Date.now()};modelLists.openaiModel={ids:llm,at:Date.now()};done.push(`OpenAI 전사 ${stt.length}개 · 요약 ${llm.length}개`)}catch(e){fails.push(e.message)}}
+  if(keyOf('claude')){try{
+    const d=await apiFetch('https://api.anthropic.com/v1/models?limit=100',{headers:{'x-api-key':keyOf('claude'),'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'}},'Claude');
+    const ids=(d.data||[]).map(x=>x.id);modelLists.claudeModel={ids,at:Date.now()};done.push(`Claude ${ids.length}개`)}catch(e){fails.push(e.message)}}
+  saveModelState();renderModels();btn.disabled=false;
+  st.textContent=!done.length&&!fails.length?'설정에 API 키를 하나 이상 넣은 뒤 불러오세요.':(done.length?`불러옴: ${done.join(' · ')}`:'')+(fails.length?` 실패: ${fails.join(' / ')}`:'');
+}
+const testSrc=()=>$('input[name=testsrc]:checked')?.value||'tone';
+let voiceBlob=null;
+function toneWav(){const n=16000*1.5,a=new Float32Array(n);for(let i=0;i<n;i++)a[i]=0.3*Math.sin(2*Math.PI*440*i/16000)*Math.min(1,i/800,(n-i)/800);return encodeWav(a)}
+async function recordVoice(){
+  const btn=$('#voiceBtn');if(R){toast('회의 녹음 중에는 쓸 수 없습니다.');return}
+  let stream;try{stream=await navigator.mediaDevices.getUserMedia({audio:true})}catch(e){toast('마이크 사용 권한이 필요합니다.');return}
+  const mime=pickMime();const mr=mime?new MediaRecorder(stream,{mimeType:mime}):new MediaRecorder(stream);const ch=[];
+  mr.ondataavailable=e=>e.data.size&&ch.push(e.data);
+  const stopped=new Promise(r=>mr.onstop=r);mr.start();btn.disabled=true;
+  for(let i=5;i>0;i--){btn.textContent=`녹음 중 ${i}초…`;await sleep(1000)}
+  mr.stop();await stopped;stream.getTracks().forEach(t=>t.stop());
+  voiceBlob=new Blob(ch,{type:mr.mimeType||mime||'audio/webm'});btn.disabled=false;btn.textContent='다시 녹음';
+  $('#voiceState').textContent='5초 음성이 준비됐습니다. 전사 모델의 "점검"을 누르세요.';
+}
+function sttForm(blob,fname,{refs=[],extras=true}={}){
+  const model=S.openaiSttModel.trim(),diar=/diarize/.test(model),f=new FormData();
+  f.append('file',blob,fname);f.append('model',model);
+  if(diar){f.append('response_format','diarized_json');f.append('chunking_strategy','auto')}
+  else f.append('response_format',/whisper/.test(model)?'verbose_json':'json');
+  if(extras){if(S.lang!=='auto')f.append(/^gpt-transcribe/.test(model)?'languages[]':'language',S.lang);
+    if(diar)for(const [id,url] of refs){f.append('known_speaker_names[]',id);f.append('known_speaker_references[]',url)}}
+  return f;
+}
+async function testModel(f){
+  const {prov,kind}=MODEL_FIELDS[f],model=S[f];
+  if(!keyOf(prov)){checks[f]={model,ok:null,msg:`설정에서 ${ENGINE_NAMES[prov]} API 키를 먼저 입력하세요.`};renderModels();return}
+  let audio=null,voice=false;
+  if(kind==='stt'){if(testSrc()==='voice'){if(!voiceBlob){toast('먼저 "5초 녹음하기"를 눌러 주세요.');return}audio=voiceBlob;voice=true}else audio=toneWav()}
+  checks[f]={model,state:'run'};renderModels();const t0=performance.now();
+  try{
+    let msg;
+    if(f==='geminiModel'){
+      const d=await apiFetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,{method:'POST',headers:{'Content-Type':'application/json','x-goog-api-key':keyOf('gemini')},
+        body:JSON.stringify({contents:[{role:'user',parts:[{inline_data:{mime_type:audio.type.split(';')[0],data:await blobToB64(audio)}},{text:'이 오디오에서 들리는 말을 원래 언어 그대로 받아 적으세요. 말소리가 없으면 "(음성 없음)"이라고만 쓰세요.'}]}]})},'Gemini');
+      const t=geminiText(d).trim();msg=voice?`받아쓴 내용: ${t}`:`오디오 입력을 받습니다. 응답: ${t.slice(0,60)}`;
+    }else if(f==='openaiSttModel'){
+      const ext=audio.type.includes('mp4')?'m4a':audio.type.includes('ogg')?'ogg':audio.type.includes('wav')?'wav':'webm';
+      const d=await apiFetch('https://api.openai.com/v1/audio/transcriptions',{method:'POST',headers:{Authorization:'Bearer '+keyOf('openai')},body:sttForm(audio,'test.'+ext)},'OpenAI');
+      const t=(d.segments?.length?d.segments.map(s=>(s.speaker?`[${s.speaker}] `:'')+s.text).join(' '):d.text||'').trim();
+      msg=(/diarize/.test(model)?'화자 구분 전사 가능. ':'전사 가능(화자 구분 없음). ')+(voice?`받아쓴 내용: ${t||'(빈 결과)'}`:'오디오 입력을 받습니다.');
+    }else{
+      const engine=prov;const t=await callLLM(engine,'연결 점검입니다. "OK"라고만 답하세요.');
+      msg=`요약 요청에 응답합니다. 응답: ${t.trim().slice(0,40)}`;
+    }
+    checks[f]={model,ok:true,msg,ms:performance.now()-t0,at:Date.now()};
+  }catch(e){
+    let msg=e.message;if(kind==='stt'&&/audio|mime|modality|unsupported|not support|input/i.test(msg))msg='이 모델은 오디오 입력을 받지 않습니다. '+msg;
+    checks[f]={model,ok:false,msg,ms:performance.now()-t0,at:Date.now()};
+  }
+  saveModelState();renderModels();
+}
+$('#fetchModels').addEventListener('click',fetchModelLists);
+$('#testAll').addEventListener('click',async()=>{const b=$('#testAll');b.disabled=true;for(const f of Object.keys(MODEL_FIELDS))if(keyOf(MODEL_FIELDS[f].prov))await testModel(f);else{checks[f]={model:S[f],ok:null,msg:`설정에서 ${ENGINE_NAMES[MODEL_FIELDS[f].prov]} API 키를 먼저 입력하세요.`}}saveModelState();renderModels();b.disabled=false});
+$('#voiceBtn').addEventListener('click',recordVoice);
+$$('input[name=testsrc]').forEach(r=>r.addEventListener('change',renderModels));
+document.addEventListener('change',e=>{const t=e.target;
+  if(t.matches('[data-mfield]')){const f=t.dataset.mfield,cus=$('#cus-'+f);
+    if(t.value==='__custom'){cus.hidden=false;cus.value=S[f];cus.focus()}else{cus.hidden=true;S[f]=t.value;saveSettings();renderModels()}}
+  else if(t.matches('[data-mcustom]')){const f=t.dataset.mcustom;const v=t.value.trim();if(v){S[f]=v;saveSettings()}t.hidden=true;renderModels()}});
+document.addEventListener('click',e=>{const b=e.target.closest('[data-test]');if(b)testModel(b.dataset.test)});
+
+/* ---------- 앱 설치 (홈 화면에 추가) ---------- */
+let installEvt=null;
+window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();installEvt=e;$('#installBtn').hidden=false});
+window.addEventListener('appinstalled',()=>{installEvt=null;$('#installBtn').hidden=true;toast('앱을 설치했습니다. 홈 화면이나 앱 목록에서 열 수 있습니다.')});
+$('#installBtn').addEventListener('click',async()=>{if(!installEvt)return;installEvt.prompt();try{await installEvt.userChoice}catch(e){}installEvt=null;$('#installBtn').hidden=true});
+(function(){
+  const standalone=matchMedia('(display-mode: standalone)').matches||navigator.standalone;
+  const ios=/iphone|ipad|ipod/i.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
+  const el=$('#installHint');if(!el)return;
+  if(standalone)el.textContent='설치된 앱으로 실행 중입니다.';
+  else if(ios)el.textContent='iPhone·iPad: Safari 아래쪽 공유 버튼 → "홈 화면에 추가"를 누르면 앱처럼 설치됩니다.';
+  else el.textContent='Chrome·Edge: 주소창 오른쪽의 설치 아이콘이나 위쪽 "앱 설치" 버튼으로 설치할 수 있습니다. 안드로이드는 메뉴(⋮) → "앱 설치"(또는 "홈 화면에 추가").';
+})();
+if('serviceWorker' in navigator&&(location.protocol==='https:'||location.hostname==='localhost')&&document.querySelector('link[rel=manifest]')){
+  navigator.serviceWorker.register('./sw.js').catch(e=>console.warn('서비스 워커 등록 실패',e));
+}
+
+/* ---------- 로그인 · 클라우드 동기화 (Firebase) ---------- */
+// firebase-config.js 가 있으면 로그인이 필요하고, 없으면(단일 파일로 열 때) 지금처럼 이 기기에서만 동작합니다.
+const FB_BASE=window.FIREBASE_SDK_BASE||'https://www.gstatic.com/firebasejs/12.19.0/';
+const CFG=window.FIREBASE_CONFIG;
+const cloudConfigured=!!(CFG&&CFG.apiKey&&CFG.projectId);
+const ADMINS=(window.APP_ADMINS||[]).map(e=>String(e).trim().toLowerCase()).filter(Boolean);
+let FB=null,AUTH=null,FDB=null,USER=null,cloudOn=false,booted=false;
+const Cloud={ready:false,unsub:[],timers:{},dirty:new Set(),tomb:new Set(),chunks:{},status:'',foldersDirty:false};
+const CHUNK=400;
+const userEmail=()=>(USER?.email||'').toLowerCase();
+const isAdmin=()=>cloudOn&&ADMINS.includes(userEmail());
+
+const AUTH_ERR={
+  'auth/invalid-credential':'이메일 또는 비밀번호가 맞지 않습니다.','auth/wrong-password':'비밀번호가 맞지 않습니다.','auth/user-not-found':'가입되지 않은 이메일입니다. "처음이면 가입하기"를 누르세요.',
+  'auth/email-already-in-use':'이미 가입된 이메일입니다. 로그인하세요.','auth/weak-password':'비밀번호는 6자 이상이어야 합니다.','auth/invalid-email':'이메일 주소 형식을 확인하세요.',
+  'auth/missing-password':'비밀번호를 입력하세요.','auth/popup-closed-by-user':'로그인 창이 닫혔습니다. 다시 시도하세요.','auth/cancelled-popup-request':'',
+  'auth/unauthorized-domain':'이 주소는 Firebase에 등록되지 않았습니다. Firebase 콘솔의 승인된 도메인에 이 사이트 주소를 추가하세요.',
+  'auth/operation-not-allowed':'이 로그인 방식이 Firebase에서 꺼져 있습니다. 관리자에게 문의하세요.','auth/too-many-requests':'시도가 너무 많습니다. 잠시 후 다시 시도하세요.',
+  'auth/network-request-failed':'네트워크에 연결할 수 없습니다.','auth/user-disabled':'사용이 중지된 계정입니다.'};
+const authMsg=e=>AUTH_ERR[e?.code]??(e?.message||String(e));
+function gate(view,msg='',ok=false){
+  document.documentElement.classList.remove('auth-pending');document.body.classList.toggle('locked',view!==null);$('#authGate').hidden=view===null;
+  for(const v of ['loading','login','verify','denied'])$('#gate-'+v).hidden=v!==view;
+  const m=$('#gateMsg');m.textContent=msg;m.classList.toggle('ok',ok);
+}
+async function loadFirebase(){
+  const [app,auth,fs]=await Promise.all(['firebase-app.js','firebase-auth.js','firebase-firestore.js'].map(f=>import(FB_BASE+f)));
+  FB={...app,...auth,...fs};
+  const a=FB.initializeApp(CFG);AUTH=FB.getAuth(a);FDB=FB.getFirestore(a);AUTH.languageCode='ko';
+  try{await FB.setPersistence(AUTH,FB.browserLocalPersistence)}catch(e){}
+}
+async function initAuth(){
+  if(!cloudConfigured){document.documentElement.classList.remove('auth-pending');await boot('');return}
+  gate('loading');
+  try{await loadFirebase()}catch(e){
+    console.warn(e);const last=lsGet('mr.lastUser',null);
+    if(last?.allowed){await boot(last.uid);USER={uid:last.uid,email:last.email};renderAcct();toast('오프라인 상태입니다. 이 기기에 저장된 기록만 볼 수 있습니다.',5000);return}
+    gate('login','로그인 서버에 연결할 수 없습니다. 인터넷 연결을 확인한 뒤 새로고침하세요.');return;
+  }
+  FB.getRedirectResult(AUTH).catch(e=>gate('login',authMsg(e)));
+  FB.onAuthStateChanged(AUTH,u=>onUser(u));
+}
+async function onUser(u){
+  if(booted){if(!u||u.uid!==USER?.uid)location.reload();return}
+  if(!u){gate('login');return}
+  USER=u;
+  const pw=u.providerData.some(p=>p.providerId==='password');
+  if(pw&&!u.emailVerified){$('#verifyEmail').textContent=u.email;gate('verify');return}
+  gate('loading','');$('#gate-loading').textContent='사용 권한을 확인하는 중…';
+  const email=userEmail();let ok=false;
+  try{
+    const ref=FB.doc(FDB,'config','access');const snap=await FB.getDoc(ref);
+    if(!snap.exists()&&ADMINS.includes(email))await FB.setDoc(ref,{emails:[email],domains:[],updatedAt:Date.now()});
+    ok=true;
+  }catch(e){
+    if(e.code==='permission-denied')ok=false;
+    else{const last=lsGet('mr.lastUser',null);if(last?.uid===u.uid&&last.allowed)ok=true;else{gate('login','사용 권한을 확인하지 못했습니다. '+(e.message||''));return}}
+  }
+  lsSet('mr.lastUser',{uid:u.uid,email,allowed:ok});
+  if(!ok){$('#deniedEmail').textContent=u.email;gate('denied');checkMyRequest();return}
+  booted=true;gate(null);
+  await boot(u.uid);startCloud();renderAcct();renderAdmin();
+}
+async function checkMyRequest(){
+  try{const d=await FB.getDoc(FB.doc(FDB,'accessRequests',USER.uid));
+    if(d.exists()){$('#deniedHint').textContent=`${new Date(d.data().at).toLocaleString('ko-KR')}에 사용 요청을 보냈습니다. 관리자가 승인하면 "다시 확인"을 누르세요.`;$('#gRequest').disabled=true}}catch(e){}
+}
+function wireAuth(){
+  const msg=(t,ok)=>{const m=$('#gateMsg');m.textContent=t;m.classList.toggle('ok',!!ok)};
+  const busyBtn=async(btn,fn)=>{btn.disabled=true;msg('');try{await fn()}catch(e){msg(authMsg(e))}btn.disabled=false};
+  $('#gGoogle').addEventListener('click',e=>busyBtn(e.currentTarget,async()=>{
+    const p=new FB.GoogleAuthProvider();p.setCustomParameters({prompt:'select_account'});
+    try{await FB.signInWithPopup(AUTH,p)}catch(err){if(['auth/popup-blocked','auth/operation-not-supported-in-this-environment'].includes(err.code))await FB.signInWithRedirect(AUTH,p);else throw err}
+  }));
+  const creds=()=>{const em=$('#gEmail').value.trim(),pw=$('#gPw').value;if(!em)throw{code:'auth/invalid-email'};return[em,pw]};
+  $('#gForm').addEventListener('submit',e=>{e.preventDefault();busyBtn($('#gSignIn'),async()=>{const [em,pw]=creds();if(!pw)throw{code:'auth/missing-password'};await FB.signInWithEmailAndPassword(AUTH,em,pw)})});
+  $('#gSignUp').addEventListener('click',e=>busyBtn(e.currentTarget,async()=>{const [em,pw]=creds();if((pw||'').length<6)throw{code:'auth/weak-password'};
+    const c=await FB.createUserWithEmailAndPassword(AUTH,em,pw);await FB.sendEmailVerification(c.user)}));
+  $('#gReset').addEventListener('click',e=>busyBtn(e.currentTarget,async()=>{const em=$('#gEmail').value.trim();if(!em)throw{code:'auth/invalid-email'};await FB.sendPasswordResetEmail(AUTH,em);msg('비밀번호 재설정 메일을 보냈습니다. 메일을 확인하세요.',true)}));
+  $('#gResend').addEventListener('click',e=>busyBtn(e.currentTarget,async()=>{await FB.sendEmailVerification(AUTH.currentUser);msg('인증 메일을 다시 보냈습니다.',true)}));
+  $('#gVerified').addEventListener('click',e=>busyBtn(e.currentTarget,async()=>{const u=AUTH.currentUser;await u.reload();
+    if(!AUTH.currentUser.emailVerified){msg('아직 인증이 확인되지 않았습니다. 메일의 링크를 눌렀는지 확인하세요.');return}
+    await AUTH.currentUser.getIdToken(true);await onUser(AUTH.currentUser)}));
+  $('#gRequest').addEventListener('click',e=>busyBtn(e.currentTarget,async()=>{
+    await FB.setDoc(FB.doc(FDB,'accessRequests',USER.uid),{email:userEmail(),name:USER.displayName||'',at:Date.now()});
+    msg('사용 요청을 보냈습니다. 관리자가 승인하면 "다시 확인"을 누르세요.',true);$('#gRequest').disabled=true}));
+  $('#gRecheck').addEventListener('click',e=>busyBtn(e.currentTarget,async()=>{await USER.getIdToken(true);await onUser(USER)}));
+  $$('[data-signout]').forEach(b=>b.addEventListener('click',()=>FB.signOut(AUTH)));
+}
+
+/* 동기화: 이 기기(IndexedDB)가 기본 저장소이고, 바뀐 회의를 계정(Firestore)에 올리고 다른 기기의 변경을 받아옵니다. */
+function cloudStatus(st){Cloud.status=st;renderAcct()}
+function saveDirty(){lsSet(LK('dirty'),[...Cloud.dirty]);lsSet(LK('tomb'),[...Cloud.tomb])}
+function cloudMark(id){if(!cloudOn)return;Cloud.dirty.add(id);saveDirty();clearTimeout(Cloud.timers[id]);Cloud.timers[id]=setTimeout(()=>cloudPush(id),1500);cloudStatus('pending')}
+function cloudDelete(id){if(!cloudOn)return;Cloud.dirty.delete(id);Cloud.tomb.add(id);saveDirty();cloudPush(id)}
+const mRef=id=>FB.doc(FDB,'users',USER.uid,'meetings',id);
+const linesCol=id=>FB.collection(FDB,'users',USER.uid,'meetings',id,'lines');
+async function cloudPush(id){
+  if(!cloudOn||!Cloud.ready)return;
+  if(!navigator.onLine){cloudStatus('offline');return}
+  try{
+    cloudStatus('syncing');
+    if(Cloud.tomb.has(id)){
+      const b=FB.writeBatch(FDB);const old=await FB.getDocs(linesCol(id));old.forEach(d=>b.delete(d.ref));
+      b.set(mRef(id),{deleted:true,updatedAt:Date.now()});await b.commit();
+      Cloud.tomb.delete(id);Cloud.chunks[id]=0;
+    }else{
+      const m=await store.getMeeting(id);
+      if(m){
+        const {lines=[],refs,...meta}=m;
+        meta.segments=(m.segments||[]).map(g=>({idx:g.idx,start:g.start||0,dur:g.dur||0,status:g.status==='running'?'pending':g.status,mime:g.mime||'',size:g.size||0}));
+        const n=Math.ceil(lines.length/CHUNK),prev=Cloud.chunks[id]??0;
+        const b=FB.writeBatch(FDB);
+        for(let i=0;i<n;i++)b.set(FB.doc(linesCol(id),String(i)),{items:lines.slice(i*CHUNK,(i+1)*CHUNK)});
+        for(let i=n;i<prev;i++)b.delete(FB.doc(linesCol(id),String(i)));
+        b.set(mRef(id),JSON.parse(JSON.stringify({...meta,chunks:n,deleted:false})));
+        await b.commit();Cloud.chunks[id]=n;
+      }
+    }
+    Cloud.dirty.delete(id);saveDirty();
+    cloudStatus(Cloud.dirty.size||Cloud.tomb.size?'pending':'ok');
+  }catch(e){console.warn('동기화 실패',e);cloudStatus(e.code==='permission-denied'?'denied':'error')}
+}
+async function cloudPushFolders(){
+  if(!cloudOn)return;Cloud.foldersDirty=true;lsSet(LK('foldersDirty'),true);
+  if(!Cloud.ready||!navigator.onLine)return;
+  try{await FB.setDoc(FB.doc(FDB,'users',USER.uid,'meta','folders'),{list:folders,updatedAt:foldersAt});Cloud.foldersDirty=false;lsSet(LK('foldersDirty'),false)}catch(e){console.warn(e)}
+}
+function pushAllPending(){for(const id of [...Cloud.tomb,...Cloud.dirty])cloudPush(id);if(Cloud.foldersDirty)cloudPushFolders()}
+async function applyRemote(id,r){
+  Cloud.chunks[id]=r.chunks||0;
+  const local=await store.getMeeting(id);
+  if(Cloud.dirty.has(id)||Cloud.tomb.has(id))return;           // 이 기기에서 아직 올리지 않은 변경이 우선
+  if(local&&(local.updatedAt||0)>=(r.updatedAt||0))return;
+  if(M?.id===id&&(busy||R))return;
+  if(r.deleted){if(local){await store.delLocal(local);if(M?.id===id)setCurrent(null)}return true}
+  const qs=await FB.getDocs(linesCol(id));
+  const lines=qs.docs.map(d=>[+d.id,d.data().items||[]]).sort((x,y)=>x[0]-y[0]).flatMap(p=>p[1]);
+  const m={...r,lines,refs:local?.refs||{}};delete m.chunks;delete m.deleted;
+  if(local)m.segments=(m.segments||[]).map(g=>{const l=local.segments?.find(x=>x.idx===g.idx);return l?{...g,status:g.status==='done'?'done':l.status}:g});
+  await store.putLocal(m);
+  if(M?.id===id){const ae=document.activeElement;if(!ae?.matches?.('[data-edit],[data-sp]'))setCurrent(m)}
+  return true;
+}
+function refreshViews(){if(!$('#tab-home').hidden)renderHome()}
+function startCloud(){
+  cloudOn=true;Cloud.dirty=new Set(lsGet(LK('dirty'),[]));Cloud.tomb=new Set(lsGet(LK('tomb'),[]));Cloud.foldersDirty=lsGet(LK('foldersDirty'),false);
+  cloudStatus(navigator.onLine?'syncing':'offline');
+  Cloud.unsub.push(FB.onSnapshot(FB.collection(FDB,'users',USER.uid,'meetings'),async snap=>{
+    let changed=false;
+    for(const ch of snap.docChanges()){if(ch.type==='removed'||ch.doc.metadata.hasPendingWrites)continue;try{if(await applyRemote(ch.doc.id,ch.doc.data()))changed=true}catch(e){console.warn(e)}}
+    if(!Cloud.ready){
+      Cloud.ready=true;const remote=new Set(snap.docs.map(d=>d.id));
+      for(const m of await store.allMeetings())if(!remote.has(m.id))Cloud.dirty.add(m.id);
+      saveDirty();pushAllPending();
+    }
+    if(changed)refreshViews();
+    if(!Cloud.dirty.size&&!Cloud.tomb.size)cloudStatus('ok');
+  },e=>{console.warn(e);cloudStatus(e.code==='permission-denied'?'denied':'error')}));
+  Cloud.unsub.push(FB.onSnapshot(FB.doc(FDB,'users',USER.uid,'meta','folders'),d=>{
+    if(d.metadata.hasPendingWrites||!d.exists())return;const v=d.data();
+    if((v.updatedAt||0)>foldersAt&&!Cloud.foldersDirty){folders=v.list||[];foldersAt=v.updatedAt;saveFolders(false);lsSet(LK('foldersAt'),foldersAt);syncFolderSelect();refreshViews()}
+  },e=>console.warn(e)));
+  window.addEventListener('online',()=>{cloudStatus('syncing');pushAllPending()});
+  window.addEventListener('offline',()=>cloudStatus('offline'));
+}
+function renderAcct(){
+  const on=cloudConfigured&&!!USER;$('#acctBox').hidden=!on;const h=$('#hdrSync');h.hidden=!on;if(!on)return;
+  $('#acctEmail').textContent=USER.email||'';
+  const map={ok:['ok','동기화됨'],pending:['run','저장 대기'],syncing:['run','동기화 중'],offline:['warn','오프라인 · 연결되면 저장'],error:['err','동기화 오류 · 자동 재시도'],denied:['err','사용 권한이 없습니다']};
+  const [cls,txt]=map[Cloud.status]||['',cloudOn?'':'오프라인 모드'];
+  h.className='pill '+cls;h.textContent=txt||'오프라인';$('#acctSync').textContent=txt||'이 기기에 저장된 기록만 표시 중';
+}
+setInterval(()=>{if(cloudOn&&Cloud.status==='error'&&navigator.onLine)pushAllPending()},30000);
+async function signOutFlow(wipe){
+  if(R||busy){toast('녹음이나 전사가 끝난 뒤 로그아웃하세요.');return}
+  if(wipe&&(Cloud.dirty.size||Cloud.tomb.size)){toast('아직 계정에 올리지 못한 변경이 있습니다. 인터넷 연결 후 "동기화됨"이 되면 다시 시도하세요.',5000);return}
+  const btn=wipe?$('#wipeBtn'):$('#logoutBtn');
+  if(wipe&&btn.dataset.confirm!=='1'){btn.dataset.confirm='1';btn.textContent='정말 지우고 로그아웃';setTimeout(()=>{btn.dataset.confirm='';btn.textContent='로그아웃 · 이 기기 기록 지우기'},4000);return}
+  Cloud.unsub.forEach(f=>{try{f()}catch(e){}});
+  if(wipe){
+    try{(await db()).close()}catch(e){}
+    await new Promise(r=>{try{const q=indexedDB.deleteDatabase(dbName());q.onsuccess=q.onerror=q.onblocked=()=>r()}catch(e){r()}});
+    try{const pre='mr.'+NS+'.';Object.keys(localStorage).filter(k=>k.startsWith(pre)).forEach(k=>localStorage.removeItem(k));localStorage.removeItem('mr.lastUser')}catch(e){}
+  }
+  if(FB&&AUTH)await FB.signOut(AUTH);location.reload();
+}
+
+/* 관리자: 허가 목록과 사용 요청 */
+async function renderAdmin(){
+  const box=$('#adminBox');box.hidden=!isAdmin();if(box.hidden)return;
+  try{
+    const ref=FB.doc(FDB,'config','access');const snap=await FB.getDoc(ref);const d=snap.exists()?snap.data():{emails:[],domains:[]};
+    $('#allowList').innerHTML=(d.emails||[]).map(e=>`<span class="chip">${esc(e)}${ADMINS.includes(e)?' <span class="n">관리자</span>':`<button class="x" data-unallow="${esc(e)}" aria-label="${esc(e)} 허가 취소">×</button>`}</span>`).join('')||'<span class="small muted">아직 없습니다.</span>';
+    $('#allowDomains').value=(d.domains||[]).join(', ');
+    const rq=await FB.getDocs(FB.collection(FDB,'accessRequests'));
+    const reqs=rq.docs.map(x=>({uid:x.id,...x.data()})).filter(r=>!(d.emails||[]).includes(r.email));
+    $('#reqBox').innerHTML=reqs.length?`<div class="label">사용 요청 ${reqs.length}건</div>`+reqs.map(r=>`<div class="req"><span class="grow"><b>${esc(r.email)}</b> ${r.name?`<span class="small muted">${esc(r.name)}</span>`:''}<br><span class="small muted">${new Date(r.at).toLocaleString('ko-KR')}</span></span><button class="btn sm primary" data-approve="${esc(r.uid)}" data-email="${esc(r.email)}">승인</button><button class="btn sm ghost" data-reject="${esc(r.uid)}">거절</button></div>`).join(''):'';
+  }catch(e){$('#reqBox').innerHTML=`<p class="small" style="color:var(--err)">사용자 목록을 불러오지 못했습니다: ${esc(e.message)}</p>`}
+}
+async function adminUpdate(fn,okMsg){try{await fn();toast(okMsg);renderAdmin()}catch(e){toast('저장하지 못했습니다: '+e.message,5000)}}
+const accessRef=()=>FB.doc(FDB,'config','access');
+document.addEventListener('click',e=>{
+  const ua=e.target.closest('[data-unallow]');if(ua){const em=ua.dataset.unallow;adminUpdate(()=>FB.setDoc(accessRef(),{emails:FB.arrayRemove(em),updatedAt:Date.now()},{merge:true}),`${em} 허가를 취소했습니다.`);return}
+  const ap=e.target.closest('[data-approve]');if(ap){const em=ap.dataset.email;adminUpdate(async()=>{await FB.setDoc(accessRef(),{emails:FB.arrayUnion(em),updatedAt:Date.now()},{merge:true});await FB.deleteDoc(FB.doc(FDB,'accessRequests',ap.dataset.approve))},`${em} 사용을 승인했습니다.`);return}
+  const rj=e.target.closest('[data-reject]');if(rj){adminUpdate(()=>FB.deleteDoc(FB.doc(FDB,'accessRequests',rj.dataset.reject)),'요청을 거절했습니다.')}
+});
+$('#allowAddBtn').addEventListener('click',()=>{
+  const list=$('#allowAdd').value.split(/[,\s;]+/).map(x=>x.trim().toLowerCase()).filter(Boolean);
+  const bad=list.filter(x=>!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(x));if(!list.length)return;if(bad.length){toast('메일 주소 형식을 확인하세요: '+bad.join(', '));return}
+  adminUpdate(async()=>{await FB.setDoc(accessRef(),{emails:FB.arrayUnion(...list),updatedAt:Date.now()},{merge:true});$('#allowAdd').value=''},`${list.length}명을 허가했습니다.`);
+});
+$('#allowAdd').addEventListener('keydown',e=>{if(e.key==='Enter')$('#allowAddBtn').click()});
+$('#allowDomBtn').addEventListener('click',()=>{
+  const list=$('#allowDomains').value.split(/[,\s;]+/).map(x=>x.trim().toLowerCase().replace(/^@/,'')).filter(Boolean);
+  if(list.some(x=>!/^[a-z0-9.-]+\.[a-z]{2,}$/.test(x))){toast('도메인 형식을 확인하세요. 예: keti.re.kr');return}
+  adminUpdate(()=>FB.setDoc(accessRef(),{domains:list,updatedAt:Date.now()},{merge:true}),list.length?'허가 도메인을 저장했습니다.':'도메인 허가를 모두 지웠습니다.');
+});
+$('#logoutBtn').addEventListener('click',()=>signOutFlow(false));
+$('#wipeBtn').addEventListener('click',()=>signOutFlow(true));
+
+/* 로그인 전에 이 기기에 만든 회의를 계정으로 가져오기 */
+async function checkLegacy(){
+  if(!NS||lsGet(LK('legacyDone'),false))return;
+  try{const d=await openDB('meeting-recorder');const list=await new Promise((res,rej)=>{const r=d.transaction('meetings').objectStore('meetings').getAll();r.onsuccess=()=>res(r.result||[]);r.onerror=()=>rej(r.error)});d.close();
+    if(!list.length){lsSet(LK('legacyDone'),true);return}
+    $('#legacyText').textContent=`이 기기에 로그인 전에 만든 회의 ${list.length}개가 있습니다. 가져오면 내 계정으로 옮겨지고 이 기기의 다른 사용자에게는 보이지 않습니다.`;$('#legacyBox').hidden=false;
+  }catch(e){}
+}
+$('#legacyHide').addEventListener('click',()=>{lsSet(LK('legacyDone'),true);$('#legacyBox').hidden=true});
+$('#legacyImport').addEventListener('click',async e=>{
+  const btn=e.currentTarget;btn.disabled=true;
+  try{
+    const d=await openDB('meeting-recorder');const os=n=>d.transaction(n).objectStore(n);
+    const get=(n,fn)=>new Promise((res,rej)=>{const r=fn(os(n));r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)});
+    const list=await get('meetings',o=>o.getAll());let n=0;
+    for(const m of list){if(await store.getMeeting(m.id))continue;
+      for(const g of m.segments||[]){const b=await get('audio',o=>o.get(m.id+':'+g.idx));if(b)await store.putAudio(m.id+':'+g.idx,b)}
+      await store.putMeeting(m);n++}
+    d.close();
+    const oldF=lsGet('mr.folders',[]);const add=oldF.filter(f=>!folders.some(x=>x.id===f.id));if(add.length){folders=folders.concat(add);saveFolders()}
+    const oldS=lsGet('mr.settings',{});if(!S.geminiKey&&!S.openaiKey&&!S.claudeKey){for(const k of ['geminiKey','openaiKey','claudeKey'])if(oldS[k])S[k]=oldS[k];saveSettings();syncSettingsUI()}
+    // 옮긴 뒤에는 기존 저장소를 지워, 같은 기기의 다른 사용자에게 보이지 않게 합니다.
+    await new Promise(r=>{try{const q=indexedDB.deleteDatabase('meeting-recorder');q.onsuccess=q.onerror=q.onblocked=()=>r()}catch(e){r()}});
+    for(const k of ['settings','folders','folder','foldersAt','current','models','checks'])try{localStorage.removeItem('mr.'+k)}catch(e){}
+    lsSet(LK('legacyDone'),true);$('#legacyBox').hidden=true;toast(`회의 ${n}개를 내 계정으로 옮겼습니다.`);syncFolderSelect();renderHome();
+  }catch(err){toast('가져오지 못했습니다: '+err.message);btn.disabled=false}
+});
+
+/* 시작 */
+let started=false;
+async function boot(ns){
+  NS=ns;dbp=null;
+  for(const k of Object.keys(S))delete S[k];Object.assign(S,S_DEFAULTS,lsGet(LK('settings'),{}));
+  folders=lsGet(LK('folders'),[]);curFolder=lsGet(LK('folder'),'all');foldersAt=lsGet(LK('foldersAt'),0);
+  modelLists=lsGet(LK('models'),{});checks=lsGet(LK('checks'),{});
+  if(!started){started=true;initPlayer();drawLevel()}
+  syncSettingsUI();
+  const id=lsGet(LK('current'),'');
+  if(id){const m=await store.getMeeting(id);if(m){m.segments.forEach(s=>{if(s.status==='running'||s.status==='recording')s.status='pending'});setCurrent(m)}}
+  syncFolderSelect();renderAll();showTab('home');
+  if(!S.geminiKey&&!S.openaiKey&&!S.claudeKey)$('#recState').textContent='녹음은 바로 할 수 있고, 전사·요약 전에 설정에서 API 키를 넣어 주세요.';
+  checkLegacy();
+}
+if(cloudConfigured){document.body.classList.add('locked');$('#authGate').hidden=false}
+initAuth().then(()=>{if(FB)wireAuth()});
+</script>
+</body>
+</html>
